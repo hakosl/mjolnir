@@ -1,0 +1,63 @@
+# Mjolnir Project Configuration
+# Copy this file to workspace/<project-name>/project.toml and customize.
+
+[project]
+name = "my-app"
+description = "A brief description of what to build"
+
+# Detailed goals — the planner will expand these into sprints
+goals = [
+    "Build a web application with ...",
+    "Include user authentication",
+    "Deploy-ready with Docker",
+]
+
+# Technical constraints
+tech_stack = "React, Vite, FastAPI, SQLite"
+constraints = [
+    "Use TypeScript for frontend",
+    "Python 3.12+ for backend",
+    "Must work offline",
+]
+
+# Optional: output directory for generated code (absolute or relative to project dir).
+# A fresh git repo is initialized here so generator commits stay isolated from mjolnir.
+# Defaults to a "src/" subdirectory inside the project dir.
+# output_dir = "/home/user/projects/my-app"
+# output_dir = "src"
+
+[planning]
+# "interactive" (default) — opens a live claude session for collaborative planning
+# "auto" — headless planning via claude -p (for VPS/overnight runs)
+mode = "interactive"
+
+[scoring]
+# Weights must sum to 1.0
+# Design quality and originality are weighted higher per Anthropic's blog post
+[scoring.weights]
+design_quality = 0.35
+originality = 0.25
+craft = 0.25
+functionality = 0.15
+
+# Minimum score (1-10) for each criterion. Sprint fails if ANY score < threshold.
+[scoring.thresholds]
+design_quality = 7
+originality = 5
+craft = 6
+functionality = 6
+
+[budget]
+# Max retries per sprint before halting
+max_retries = 3
+# Max total sprints (0 = let planner decide)
+max_sprints = 0
+# Cost tracking only (not enforced) — useful for monitoring spend on API plans.
+# On Max plan this is ignored; rate limits are handled automatically.
+budget_per_sprint = 0
+
+[notifications]
+# ntfy.sh topic (override with MJOLNIR_NTFY_TOPIC env var)
+ntfy_topic = "mjolnir-harness"
+# ntfy.sh server (override with MJOLNIR_NTFY_SERVER env var)
+ntfy_server = "https://ntfy.sh"

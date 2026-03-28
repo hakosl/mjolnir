@@ -1,0 +1,4 @@
+# Each project workspace has its own git repo.
+# Don't track generated project files in the mjolnir repo.
+*
+!.gitignore

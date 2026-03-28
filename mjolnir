@@ -1,0 +1,482 @@
+#!/usr/bin/env bash
+# Mjolnir CLI — Simple interface for the autonomous coding harness.
+# Usage: mjolnir <command> [args]
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_DIR="${MJOLNIR_WORKSPACE:-${SCRIPT_DIR}/workspace}"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+die() { echo "Error: $1" >&2; exit 1; }
+
+# Resolve project dir from name or path
+resolve_project() {
+    local name="$1"
+    if [[ -d "$name" && -f "$name/project.toml" ]]; then
+        echo "$name"
+    elif [[ -d "${WORKSPACE_DIR}/${name}" ]]; then
+        echo "${WORKSPACE_DIR}/${name}"
+    else
+        die "Project '${name}' not found. Run 'mjolnir list' to see projects."
+    fi
+}
+
+# Get tmux session name for a project
+session_name() {
+    local project_dir="$1"
+    local abs_dir
+    abs_dir="$(cd "$project_dir" && pwd)"
+    echo "mjolnir-$(echo "$abs_dir" | md5sum 2>/dev/null | cut -c1-8 || echo "$abs_dir" | md5 -q 2>/dev/null | cut -c1-8 || basename "$abs_dir")"
+}
+
+json_field() {
+    local file="$1" field="$2" default="${3:-}"
+    python3 - "$file" "$field" "$default" <<'PYEOF'
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+    val = data.get(sys.argv[2], sys.argv[3])
+    print(val if val is not None else sys.argv[3])
+except (KeyError, json.JSONDecodeError, FileNotFoundError):
+    print(sys.argv[3])
+PYEOF
+}
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+
+cmd_new() {
+    local name="${1:-}"
+    if [[ -z "$name" ]]; then
+        echo "Usage: mjolnir new <project-name>"
+        exit 1
+    fi
+
+    local project_dir="${WORKSPACE_DIR}/${name}"
+    if [[ -d "$project_dir" ]]; then
+        die "Project '${name}' already exists at ${project_dir}"
+    fi
+
+    mkdir -p "$project_dir"
+    cp "${SCRIPT_DIR}/templates/project.toml.example" "${project_dir}/project.toml"
+
+    echo "Created project: ${project_dir}"
+    echo ""
+    echo "Next steps:"
+    echo "  1. Edit config:  mjolnir edit ${name}"
+    echo "  2. Start build:  mjolnir run ${name}"
+}
+
+cmd_edit() {
+    local name="${1:-}"
+    if [[ -z "$name" ]]; then
+        echo "Usage: mjolnir edit <project-name>"
+        exit 1
+    fi
+    local project_dir
+    project_dir="$(resolve_project "$name")"
+    "${EDITOR:-nano}" "${project_dir}/project.toml"
+}
+
+cmd_run() {
+    local name=""
+    local planning_mode=""
+
+    # Parse args: name + optional --interactive / --auto
+    for arg in "$@"; do
+        case "$arg" in
+            --interactive) planning_mode="interactive" ;;
+            --auto)        planning_mode="auto" ;;
+            -*)            echo "Unknown flag: ${arg}" >&2; exit 1 ;;
+            *)             name="$arg" ;;
+        esac
+    done
+
+    if [[ -z "$name" ]]; then
+        echo "Usage: mjolnir run <project-name> [--interactive|--auto]"
+        exit 1
+    fi
+
+    local project_dir
+    project_dir="$(resolve_project "$name")"
+    local session
+    session="$(session_name "$project_dir")"
+
+    # Set planning mode env var if overridden
+    local mode_env=""
+    if [[ -n "$planning_mode" ]]; then
+        mode_env="MJOLNIR_PLANNING_MODE=${planning_mode}"
+    fi
+
+    # Check if already running
+    if tmux has-session -t "$session" 2>/dev/null; then
+        echo "Already running. Attaching..."
+        tmux attach -t "$session"
+        return
+    fi
+
+    # Interactive mode needs a TTY — run in foreground or attached tmux
+    local effective_mode="${planning_mode:-$(json_field "${project_dir}/project.toml" "" "interactive")}"
+    # Read mode from config if not overridden
+    if [[ -z "$planning_mode" ]]; then
+        effective_mode="$(cd "${SCRIPT_DIR}" && python3 - "${project_dir}/project.toml" <<'PYEOF' 2>/dev/null || echo "interactive"
+import sys
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
+with open(sys.argv[1], "rb") as f:
+    c = tomllib.load(f)
+print(c.get("planning", {}).get("mode", "interactive"))
+PYEOF
+)"
+    fi
+
+    if [[ "$effective_mode" == "interactive" ]]; then
+        # Interactive planning needs a terminal — run directly, not backgrounded
+        echo "Starting Mjolnir for '${name}' (interactive planning)..."
+        echo "After planning, the build loop will run autonomously."
+        echo ""
+        env $mode_env bash "${SCRIPT_DIR}/mjolnir.sh" "${project_dir}" 2>&1 | tee -a "${project_dir}/mjolnir-tmux.log"
+    else
+        # Auto mode — run in tmux background
+        echo "Starting Mjolnir for '${name}' in tmux session '${session}'..."
+        tmux new-session -d -s "$session" \
+            "env ${mode_env} bash '${SCRIPT_DIR}/mjolnir.sh' '${project_dir}' 2>&1 | tee -a '${project_dir}/mjolnir-tmux.log'"
+        echo "Running in background. Use:"
+        echo "  mjolnir attach ${name}   — attach to live session"
+        echo "  mjolnir status ${name}   — check progress"
+        echo "  mjolnir logs ${name}     — tail structured logs"
+    fi
+}
+
+cmd_attach() {
+    local name="${1:-}"
+    if [[ -z "$name" ]]; then
+        echo "Usage: mjolnir attach <project-name>"
+        exit 1
+    fi
+    local project_dir
+    project_dir="$(resolve_project "$name")"
+    local session
+    session="$(session_name "$project_dir")"
+
+    if ! tmux has-session -t "$session" 2>/dev/null; then
+        die "No running session for '${name}'. Start with: mjolnir run ${name}"
+    fi
+    tmux attach -t "$session"
+}
+
+cmd_status() {
+    local name="${1:-}"
+
+    # No arg: show all projects
+    if [[ -z "$name" ]]; then
+        echo "MJOLNIR PROJECTS"
+        echo "================"
+        echo ""
+        if [[ ! -d "$WORKSPACE_DIR" ]]; then
+            echo "No workspace yet. Run: mjolnir new <name>"
+            return
+        fi
+        local found=false
+        for dir in "${WORKSPACE_DIR}"/*/; do
+            [[ -f "${dir}project.toml" ]] || continue
+            found=true
+            local pname
+            pname="$(basename "$dir")"
+            local state_file="${dir}state.json"
+            local phase="idle"
+            local sprint="0"
+            local total="0"
+            local running="no"
+
+            if [[ -f "$state_file" ]]; then
+                phase="$(json_field "$state_file" "phase" "idle")"
+                sprint="$(json_field "$state_file" "sprint" "0")"
+                total="$(json_field "$state_file" "total_sprints" "0")"
+            fi
+
+            local session
+            session="$(session_name "$dir")"
+            if tmux has-session -t "$session" 2>/dev/null; then
+                running="yes"
+            fi
+
+            printf "  %-20s  phase=%-12s  sprint=%s/%s  running=%s\n" \
+                "$pname" "$phase" "$sprint" "$total" "$running"
+        done
+        if [[ "$found" == "false" ]]; then
+            echo "  No projects yet. Run: mjolnir new <name>"
+        fi
+        return
+    fi
+
+    # Specific project
+    local project_dir
+    project_dir="$(resolve_project "$name")"
+    local state_file="${project_dir}/state.json"
+
+    if [[ ! -f "$state_file" ]]; then
+        echo "Project '${name}': not started yet"
+        echo "Run: mjolnir run ${name}"
+        return
+    fi
+
+    echo "PROJECT: ${name}"
+    echo "---"
+    python3 - "$state_file" <<'PYEOF'
+import json, sys, time
+with open(sys.argv[1]) as f:
+    s = json.load(f)
+phase = s["phase"]
+sprint = s["sprint"]
+total = s["total_sprints"]
+attempt = s["attempt"]
+costs = s["costs"]
+total_cost = sum(costs.values())
+updated = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(s["updated_at"]))
+
+print(f"  Phase:    {phase}")
+print(f"  Sprint:   {sprint}/{total} (attempt {attempt})")
+print(f"  Cost:     ${total_cost:.2f} (planner: ${costs.get('planner',0):.2f}, generator: ${costs.get('generator',0):.2f}, evaluator: ${costs.get('evaluator',0):.2f})")
+print(f"  Updated:  {updated}")
+
+if s.get("rate_limit_until"):
+    rl = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(s["rate_limit_until"]))
+    print(f"  Rate limited until: {rl}")
+if s.get("last_error"):
+    print(f"  Last error: {s['last_error']}")
+PYEOF
+
+    # Check if running
+    local session
+    session="$(session_name "$project_dir")"
+    if tmux has-session -t "$session" 2>/dev/null; then
+        echo "  Running:  yes (tmux: ${session})"
+    else
+        echo "  Running:  no"
+    fi
+
+    # Show latest eval scores if available
+    local latest_eval
+    latest_eval="$(ls -t "${project_dir}"/sprints/*/eval_report.json 2>/dev/null | head -1 || true)"
+    if [[ -n "$latest_eval" ]]; then
+        echo ""
+        echo "LATEST EVALUATION:"
+        python3 - "$latest_eval" <<'PYEOF'
+import json, sys
+with open(sys.argv[1]) as f:
+    r = json.load(f)
+scores = r.get("scores", {})
+passed = r.get("passed", False)
+status = "PASSED" if passed else "FAILED"
+print(f"  Sprint {r.get('sprint','?')} attempt {r.get('attempt','?')}: {status}")
+for k, v in scores.items():
+    print(f"    {k}: {v}/10")
+feedback = r.get("feedback", "")
+if feedback:
+    print(f"  Feedback: {feedback[:200]}")
+PYEOF
+    fi
+}
+
+cmd_logs() {
+    local name="${1:-}"
+    if [[ -z "$name" ]]; then
+        echo "Usage: mjolnir logs <project-name>"
+        exit 1
+    fi
+    local project_dir
+    project_dir="$(resolve_project "$name")"
+    local log_file="${project_dir}/mjolnir.log"
+
+    if [[ ! -f "$log_file" ]]; then
+        die "No logs yet for '${name}'"
+    fi
+    tail -f "$log_file" | python3 -m json.tool
+}
+
+cmd_pause() {
+    local name="${1:-}"
+    if [[ -z "$name" ]]; then
+        echo "Usage: mjolnir pause <project-name>"
+        exit 1
+    fi
+    local project_dir
+    project_dir="$(resolve_project "$name")"
+    local state_file="${project_dir}/state.json"
+
+    if [[ ! -f "$state_file" ]]; then
+        die "Project '${name}' has no state"
+    fi
+
+    python3 - "$state_file" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    s = json.load(f)
+s["phase"] = "halted"
+with open(path, "w") as f:
+    json.dump(s, f, indent=2)
+PYEOF
+
+    # Kill tmux session if running
+    local session
+    session="$(session_name "$project_dir")"
+    if tmux has-session -t "$session" 2>/dev/null; then
+        tmux kill-session -t "$session"
+        echo "Session stopped."
+    fi
+    echo "Project '${name}' paused. Resume with: mjolnir resume ${name}"
+}
+
+cmd_resume() {
+    local name="${1:-}"
+    if [[ -z "$name" ]]; then
+        echo "Usage: mjolnir resume <project-name>"
+        exit 1
+    fi
+    local project_dir
+    project_dir="$(resolve_project "$name")"
+    local state_file="${project_dir}/state.json"
+
+    if [[ ! -f "$state_file" ]]; then
+        die "Project '${name}' has no state"
+    fi
+
+    local phase
+    phase="$(json_field "$state_file" "phase" "idle")"
+    if [[ "$phase" != "halted" && "$phase" != "error" ]]; then
+        echo "Project is in phase '${phase}', not halted. Starting anyway..."
+    else
+        # Set phase back to generating to resume
+        python3 - "$state_file" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    s = json.load(f)
+s["phase"] = "generating"
+s["last_error"] = None
+with open(path, "w") as f:
+    json.dump(s, f, indent=2)
+PYEOF
+        echo "State reset to 'generating'."
+    fi
+
+    cmd_run "$name"
+}
+
+cmd_watchdog() {
+    local action="${1:-status}"
+
+    if [[ "$action" == "install" ]]; then
+        local name="${2:-}"
+        if [[ -z "$name" ]]; then
+            echo "Usage: mjolnir watchdog install <project-name>"
+            exit 1
+        fi
+        local project_dir
+        project_dir="$(resolve_project "$name")"
+        local abs_project
+        abs_project="$(cd "$project_dir" && pwd)"
+        local cron_line="*/5 * * * * '${SCRIPT_DIR}/mjolnir-watchdog.sh' '${abs_project}'"
+
+        # Check if already installed
+        if crontab -l 2>/dev/null | grep -qF "$abs_project"; then
+            echo "Watchdog already installed for '${name}'"
+            return
+        fi
+
+        (crontab -l 2>/dev/null; echo "$cron_line") | crontab -
+        echo "Watchdog installed for '${name}' (checks every 5 minutes)"
+
+    elif [[ "$action" == "remove" ]]; then
+        local name="${2:-}"
+        if [[ -z "$name" ]]; then
+            echo "Usage: mjolnir watchdog remove <project-name>"
+            exit 1
+        fi
+        local project_dir
+        project_dir="$(resolve_project "$name")"
+        local abs_project
+        abs_project="$(cd "$project_dir" && pwd)"
+
+        crontab -l 2>/dev/null | grep -vF "$abs_project" | crontab -
+        echo "Watchdog removed for '${name}'"
+
+    else
+        echo "Installed watchdogs:"
+        crontab -l 2>/dev/null | grep "mjolnir-watchdog" || echo "  (none)"
+    fi
+}
+
+cmd_help() {
+    cat <<'EOF'
+Mjolnir — Autonomous Coding Harness
+
+USAGE:
+  mjolnir <command> [args]
+
+PROJECT COMMANDS:
+  new <name>              Create a new project from template
+  edit <name>             Open project.toml in your editor
+  run <name>              Start building (interactive planning by default)
+  run <name> --auto       Headless mode (plan + build in background)
+  run <name> --interactive  Force interactive planning
+  attach <name>           Attach to running tmux session
+  pause <name>            Halt the build and kill the session
+  resume <name>           Resume a paused/errored build
+
+MONITORING:
+  status                  Show all projects overview
+  status <name>           Show detailed project status + latest scores
+  logs <name>             Tail structured log (Ctrl+C to stop)
+
+RELIABILITY:
+  watchdog                Show installed watchdogs
+  watchdog install <name> Auto-restart crashed sessions (cron, every 5m)
+  watchdog remove <name>  Remove watchdog for a project
+
+ENVIRONMENT:
+  MJOLNIR_WORKSPACE       Override workspace directory (default: ./workspace)
+  MJOLNIR_NTFY_TOPIC      ntfy.sh topic for push notifications
+  MJOLNIR_NTFY_SERVER     ntfy.sh server URL
+  EDITOR                  Editor for 'mjolnir edit' (default: nano)
+
+QUICK START:
+  mjolnir new my-app
+  mjolnir edit my-app
+  mjolnir run my-app
+  mjolnir status my-app
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Main dispatch
+# ---------------------------------------------------------------------------
+command="${1:-help}"
+shift || true
+
+case "$command" in
+    new)        cmd_new "$@" ;;
+    edit)       cmd_edit "$@" ;;
+    run)        cmd_run "$@" ;;
+    attach)     cmd_attach "$@" ;;
+    status|st)  cmd_status "$@" ;;
+    logs)       cmd_logs "$@" ;;
+    pause)      cmd_pause "$@" ;;
+    resume)     cmd_resume "$@" ;;
+    watchdog)   cmd_watchdog "$@" ;;
+    help|--help|-h) cmd_help ;;
+    *)
+        echo "Unknown command: ${command}" >&2
+        echo "Run 'mjolnir help' for usage." >&2
+        exit 1
+        ;;
+esac
