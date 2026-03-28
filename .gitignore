@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+
+# Runtime state (per-project, not tracked)
+workspace/*/state.json
+workspace/*/mjolnir.log
+workspace/*/mjolnir-tmux.log
+workspace/*/.last_agent_output
+workspace/*/costs.json
+workspace/*/sprints/
+
+# Generated project code has its own git repos
+workspace/*/src/
+workspace/*/todo-app/
+
+# Backend
+backend/.venv/
+backend/data/
+backend/.pytest_cache/
+backend/*.egg-info/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Temp files
+/tmp/
+*.lock
+*.tmp
