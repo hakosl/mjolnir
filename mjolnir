@@ -264,9 +264,11 @@ PYEOF
     fi
 
     # Show latest eval scores if available
-    local latest_eval
-    latest_eval="$(find "${project_dir}/sprints" -name 'eval_report.json' -print0 2>/dev/null | xargs -0 ls -t 2>/dev/null | head -1 || true)"
-    if [[ -n "$latest_eval" ]]; then
+    local latest_eval=""
+    if [[ -d "${project_dir}/sprints" ]]; then
+        latest_eval="$(find "${project_dir}/sprints" -type f -name 'eval_report.json' 2>/dev/null | sort -r | head -1 || true)"
+    fi
+    if [[ -n "$latest_eval" && -f "$latest_eval" ]]; then
         echo ""
         echo "LATEST EVALUATION:"
         python3 - "$latest_eval" <<'PYEOF'
