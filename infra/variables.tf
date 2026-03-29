@@ -27,7 +27,7 @@ variable "compartment_ocid" {
 variable "region" {
   description = "OCI region"
   type        = string
-  default     = "eu-frankfurt-1"
+  default     = "eu-paris-1"
 }
 
 variable "ssh_public_key" {
