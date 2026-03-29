@@ -265,7 +265,7 @@ PYEOF
 
     # Show latest eval scores if available
     local latest_eval
-    latest_eval="$(ls -t "${project_dir}"/sprints/*/eval_report.json 2>/dev/null | head -1 || true)"
+    latest_eval="$(find "${project_dir}/sprints" -name 'eval_report.json' -print0 2>/dev/null | xargs -0 ls -t 2>/dev/null | head -1 || true)"
     if [[ -n "$latest_eval" ]]; then
         echo ""
         echo "LATEST EVALUATION:"

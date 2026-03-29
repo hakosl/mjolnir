@@ -203,6 +203,7 @@ run_agent() {
     result_file="$(mktemp /tmp/mjolnir-result-XXXXXXXX)"
 
     # Ensure temp file is cleaned up on any exit path
+    # shellcheck disable=SC2064  # Intentional early expansion of $result_file
     trap "rm -f '$result_file'" RETURN
 
     echo "Running ${role} agent (budget: \$${budget})..."
