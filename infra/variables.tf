@@ -65,6 +65,12 @@ variable "github_repo_url" {
   default     = ""
 }
 
+variable "alert_email" {
+  description = "Email address for budget alerts"
+  type        = string
+  default     = ""
+}
+
 variable "tailscale_auth_key" {
   description = "Tailscale auth key (from https://login.tailscale.com/admin/settings/keys). Use a reusable key."
   type        = string
