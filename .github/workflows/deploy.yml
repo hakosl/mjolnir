@@ -62,6 +62,15 @@ jobs:
             echo "Deploy complete: $(git log --oneline -1)"
           DEPLOY
 
+      - name: Configure Claude auth
+        if: ${{ secrets.CLAUDE_TOKEN != '' }}
+        run: |
+          ssh opc@mjolnir << CLAUDE_AUTH
+            mkdir -p ~/.claude
+            echo '${{ secrets.CLAUDE_TOKEN }}' | claude setup-token 2>/dev/null || true
+            echo "Claude auth configured"
+          CLAUDE_AUTH
+
       - name: Health check
         run: |
           ssh opc@mjolnir << 'HEALTH'
