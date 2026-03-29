@@ -64,3 +64,10 @@ variable "github_repo_url" {
   type        = string
   default     = ""
 }
+
+variable "tailscale_auth_key" {
+  description = "Tailscale auth key (from https://login.tailscale.com/admin/settings/keys). Use a reusable key."
+  type        = string
+  sensitive   = true
+  default     = ""
+}

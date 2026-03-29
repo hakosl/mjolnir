@@ -9,8 +9,13 @@ output "instance_id" {
 }
 
 output "ssh_command" {
-  description = "SSH command to connect to the instance"
+  description = "SSH command to connect via public IP"
   value       = "ssh opc@${oci_core_instance.mjolnir.public_ip}"
+}
+
+output "ssh_tailscale" {
+  description = "SSH command via Tailscale (after tailscale up)"
+  value       = "ssh opc@mjolnir"
 }
 
 output "availability_domain" {

@@ -47,8 +47,20 @@ runcmd:
   # Set up tmux for mjolnir user
   - sudo -u mjolnir bash -c 'echo "set -g mouse on" > /home/mjolnir/.tmux.conf'
 
-  # Firewall: allow SSH
+  # Install and configure Tailscale
+  - curl -fsSL https://tailscale.com/install.sh | sh
+  - systemctl enable --now tailscaled
+  - |
+    if [ -n "${tailscale_auth_key}" ]; then
+      tailscale up --authkey="${tailscale_auth_key}" --hostname=mjolnir --ssh
+      echo "Tailscale connected. SSH via: ssh mjolnir"
+    else
+      echo "No Tailscale auth key provided. Run 'tailscale up' manually."
+    fi
+
+  # Firewall: allow SSH + Tailscale
   - firewall-cmd --permanent --add-service=ssh
+  - firewall-cmd --permanent --add-interface=tailscale0 --zone=trusted 2>/dev/null || true
   - firewall-cmd --reload
 
   # Signal cloud-init complete

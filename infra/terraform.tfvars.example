@@ -24,3 +24,7 @@ boot_volume_gb     = 50
 
 # GitHub repo URL for auto-cloning onto the instance
 github_repo_url = ""
+
+# Tailscale auth key (get from https://login.tailscale.com/admin/settings/keys)
+# Use a reusable, ephemeral key. Leave empty to skip Tailscale setup.
+tailscale_auth_key = ""
