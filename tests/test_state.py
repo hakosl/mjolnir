@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Tests for state.py — atomic state machine."""
 
-import json
 import os
 import sys
 import tempfile
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
+import contextlib
+
 from state import (
     add_cost,
     default_state,
@@ -31,10 +32,8 @@ def make_temp_state():
 def cleanup(path):
     """Remove state file and associated lock/tmp files."""
     for suffix in ("", ".lock", ".tmp"):
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.unlink(path + suffix)
-        except FileNotFoundError:
-            pass
 
 
 def test_default_state():
@@ -84,7 +83,7 @@ def test_invalid_transition():
         write_state(path, default_state())
         try:
             transition(path, "nonexistent_phase")
-            assert False, "Should have raised ValueError"
+            raise AssertionError("Should have raised ValueError")
         except ValueError:
             pass
         print("  PASS: invalid_transition")
@@ -146,12 +145,15 @@ def test_exit_rate_limit_invalid_resume_phase():
     """Exit rate limit with corrupted resume phase falls back to generating."""
     path = make_temp_state()
     try:
-        write_state(path, {
-            **default_state(),
-            "phase": "rate_limited",
-            "rate_limit_resume_phase": "totally_bogus",
-            "rate_limit_until": time.time() - 100,
-        })
+        write_state(
+            path,
+            {
+                **default_state(),
+                "phase": "rate_limited",
+                "rate_limit_resume_phase": "totally_bogus",
+                "rate_limit_until": time.time() - 100,
+            },
+        )
         state = exit_rate_limit(path)
         assert state["phase"] == "generating", f"Expected 'generating', got '{state['phase']}'"
         print("  PASS: exit_rate_limit_invalid_resume")
@@ -186,7 +188,7 @@ def test_corrupt_state_file():
             f.write("{broken json")
         try:
             read_state(path)
-            assert False, "Should have raised RuntimeError"
+            raise AssertionError("Should have raised RuntimeError")
         except RuntimeError as e:
             assert "corrupted" in str(e).lower()
         print("  PASS: corrupt_state_file")

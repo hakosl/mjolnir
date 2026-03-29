@@ -14,17 +14,14 @@ workspace/*/sprints/
 workspace/*/src/
 workspace/*/todo-app/
 
-# Backend
-backend/.venv/
-backend/data/
-backend/.pytest_cache/
-backend/*.egg-info/
-
-# Frontend
-frontend/node_modules/
-frontend/dist/
+# Generated code (from test runs)
+backend/
+frontend/
 
 # Temp files
 /tmp/
 *.lock
 *.tmp
+
+# Raw stream debug files
+workspace/*/.raw_stream_*.jsonl

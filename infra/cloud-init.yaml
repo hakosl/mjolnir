@@ -1,0 +1,55 @@
+#cloud-config
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - tmux
+  - jq
+  - git
+  - python3
+  - python3-pip
+  - curl
+  - chromium-browser
+
+write_files:
+  - path: /etc/profile.d/mjolnir.sh
+    permissions: "0644"
+    content: |
+      export PLAYWRIGHT_BROWSERS_PATH=0
+      export PATH="$PATH:/usr/local/bin"
+
+runcmd:
+  # Install Node.js 20 LTS
+  - curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+  - dnf install -y nodejs
+
+  # Install Claude Code CLI
+  - npm install -g @anthropic-ai/claude-code
+
+  # Install Playwright (use system chromium on ARM)
+  - npx playwright install-deps 2>/dev/null || true
+
+  # Install Python tomli (for Python < 3.11)
+  - pip3 install tomli 2>/dev/null || true
+
+  # Create mjolnir user
+  - useradd -m -s /bin/bash mjolnir || true
+  - usermod -aG wheel mjolnir
+
+  # Clone repo (if configured)
+  - |
+    if [ -n "${github_repo_url}" ]; then
+      sudo -u mjolnir git clone "${github_repo_url}" /home/mjolnir/mjolnir
+      chown -R mjolnir:mjolnir /home/mjolnir/mjolnir
+    fi
+
+  # Set up tmux for mjolnir user
+  - sudo -u mjolnir bash -c 'echo "set -g mouse on" > /home/mjolnir/.tmux.conf'
+
+  # Firewall: allow SSH
+  - firewall-cmd --permanent --add-service=ssh
+  - firewall-cmd --reload
+
+  # Signal cloud-init complete
+  - echo "Mjolnir cloud-init complete" > /var/log/mjolnir-init.log

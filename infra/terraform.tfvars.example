@@ -1,0 +1,26 @@
+# Copy to terraform.tfvars and fill in your values.
+# DO NOT commit terraform.tfvars — it contains secrets.
+
+# OCI Authentication
+tenancy_ocid     = "ocid1.tenancy.oc1..aaaa..."
+user_ocid        = "ocid1.user.oc1..aaaa..."
+fingerprint      = "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
+private_key_path = "~/.oci/oci_api_key.pem"
+
+# Compartment (create one in OCI Console > Identity > Compartments)
+compartment_ocid = "ocid1.compartment.oc1..aaaa..."
+
+# Region
+region = "eu-frankfurt-1"
+
+# SSH public key (paste your public key here)
+ssh_public_key = "ssh-ed25519 AAAA..."
+
+# Always Free ARM instance (defaults are max free tier)
+instance_shape     = "VM.Standard.A1.Flex"
+instance_ocpus     = 4
+instance_memory_gb = 24
+boot_volume_gb     = 50
+
+# GitHub repo URL for auto-cloning onto the instance
+github_repo_url = ""

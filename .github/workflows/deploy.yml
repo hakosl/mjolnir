@@ -1,0 +1,53 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      restart_sessions:
+        description: "Restart running mjolnir sessions after deploy"
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Oracle Cloud
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.OCI_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "${{ secrets.OCI_HOST_KEY }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Deploy
+        env:
+          HOST: ${{ secrets.OCI_INSTANCE_IP }}
+          USER: ${{ secrets.OCI_INSTANCE_USER }}
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new ${USER}@${HOST} << 'DEPLOY'
+            set -e
+            cd ~/mjolnir
+
+            echo "Pulling latest code..."
+            git pull --ff-only origin main
+
+            echo "Deploy complete."
+          DEPLOY
+
+      - name: Restart sessions (optional)
+        if: ${{ inputs.restart_sessions }}
+        env:
+          HOST: ${{ secrets.OCI_INSTANCE_IP }}
+          USER: ${{ secrets.OCI_INSTANCE_USER }}
+        run: |
+          ssh ${USER}@${HOST} << 'RESTART'
+            echo "Checking for running mjolnir sessions..."
+            tmux list-sessions 2>/dev/null | grep mjolnir || echo "No sessions running"
+          RESTART

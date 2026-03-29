@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import fcntl
 import json
 import os
@@ -11,10 +12,18 @@ import time
 from pathlib import Path
 from typing import Any
 
-VALID_PHASES = frozenset({
-    "idle", "planning", "generating", "evaluating",
-    "rate_limited", "halted", "error", "complete",
-})
+VALID_PHASES = frozenset(
+    {
+        "idle",
+        "planning",
+        "generating",
+        "evaluating",
+        "rate_limited",
+        "halted",
+        "error",
+        "complete",
+    }
+)
 
 
 def default_state() -> dict[str, Any]:
@@ -46,7 +55,7 @@ def read_state(state_file: str) -> dict[str, Any]:
     if not path.exists():
         return default_state()
     try:
-        with open(path, "r") as f:
+        with open(path) as f:
             return json.load(f)
     except json.JSONDecodeError as e:
         raise RuntimeError(f"State file corrupted at {path}: {e}") from e
@@ -87,6 +96,7 @@ def transition(state_file: str, new_phase: str, **updates: Any) -> dict[str, Any
 
 def add_cost(state_file: str, role: str, amount: float) -> dict[str, Any]:
     """Add cost for a role (planner/generator/evaluator). File-locked."""
+
     def _do():
         state = read_state(state_file)
         costs = {**state["costs"], role: state["costs"].get(role, 0.0) + amount}
@@ -106,9 +116,7 @@ def is_rate_limited(state_file: str) -> tuple[bool, int]:
     return True, int(remaining)
 
 
-def enter_rate_limit(
-    state_file: str, resets_at: float, current_phase: str
-) -> dict[str, Any]:
+def enter_rate_limit(state_file: str, resets_at: float, current_phase: str) -> dict[str, Any]:
     """Transition to rate_limited, remembering which phase to resume."""
     return transition(
         state_file,
@@ -141,7 +149,9 @@ def exit_rate_limit(state_file: str) -> dict[str, Any]:
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         print("Usage: state.py <state_file> <command> [args...]", file=sys.stderr)
-        print("Commands: read, write, transition <phase>, add_cost <role> <amount>", file=sys.stderr)
+        print(
+            "Commands: read, write, transition <phase>, add_cost <role> <amount>", file=sys.stderr
+        )
         print("          is_rate_limited, enter_rate_limit <resets_at> <phase>", file=sys.stderr)
         print("          exit_rate_limit, init", file=sys.stderr)
         sys.exit(1)
@@ -164,10 +174,8 @@ if __name__ == "__main__":
                 print(f"Error: expected key=value, got: {kv}", file=sys.stderr)
                 sys.exit(1)
             k, v = kv.split("=", 1)
-            try:
+            with contextlib.suppress(json.JSONDecodeError, ValueError):
                 v = json.loads(v)
-            except (json.JSONDecodeError, ValueError):
-                pass
             extras[k] = v
         result_state = transition(state_file, phase, **extras)
         print(json.dumps(result_state, indent=2))

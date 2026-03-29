@@ -16,12 +16,12 @@ import json
 import os
 import sys
 import time
-from typing import IO, Any, Optional
+from typing import IO, Any
 
 
 def parse_stream(
     input_stream: IO[str],
-    log_file: Optional[str] = None,
+    log_file: str | None = None,
 ) -> dict[str, Any]:
     """Parse JSONL stream from claude -p and return structured result."""
     result: dict[str, Any] = {
@@ -55,10 +55,14 @@ def parse_stream(
 
         if event_type == "system" and event.get("subtype") == "init":
             result["session_id"] = event.get("session_id")
-            _log_event(log_file, "session_init", {
-                "session_id": event.get("session_id"),
-                "model": event.get("model"),
-            })
+            _log_event(
+                log_file,
+                "session_init",
+                {
+                    "session_id": event.get("session_id"),
+                    "model": event.get("model"),
+                },
+            )
 
         elif event_type == "assistant":
             message = event.get("message", {})
@@ -73,19 +77,21 @@ def parse_stream(
             if resets_at is not None:
                 result["rate_limited"] = True
                 result["rate_limit_resets_at"] = resets_at
-                _log_event(log_file, "rate_limit", {
-                    "resets_at": resets_at,
-                    "rate_limit_type": event.get("rateLimitType"),
-                    "status": event.get("status"),
-                    "overage_status": event.get("overageStatus"),
-                })
+                _log_event(
+                    log_file,
+                    "rate_limit",
+                    {
+                        "resets_at": resets_at,
+                        "rate_limit_type": event.get("rateLimitType"),
+                        "status": event.get("status"),
+                        "overage_status": event.get("overageStatus"),
+                    },
+                )
 
         elif event_type == "result":
             got_result_event = True
             # Guard against null cost values
-            result["cost_usd"] = float(
-                event.get("cost_usd") or event.get("total_cost_usd") or 0.0
-            )
+            result["cost_usd"] = float(event.get("cost_usd") or event.get("total_cost_usd") or 0.0)
             result["error"] = event.get("is_error", False)
             result["stop_reason"] = event.get("stop_reason")
             result["session_id"] = event.get("session_id", result["session_id"])
@@ -94,12 +100,16 @@ def parse_stream(
             if event.get("is_error"):
                 result["error_message"] = event.get("result", "Unknown error")
 
-            _log_event(log_file, "result", {
-                "cost_usd": result["cost_usd"],
-                "is_error": result["error"],
-                "stop_reason": result["stop_reason"],
-                "duration_ms": result["duration_ms"],
-            })
+            _log_event(
+                log_file,
+                "result",
+                {
+                    "cost_usd": result["cost_usd"],
+                    "is_error": result["error"],
+                    "stop_reason": result["stop_reason"],
+                    "duration_ms": result["duration_ms"],
+                },
+            )
 
     # Join collected output parts (avoids O(n^2) string concatenation)
     result["output"] = "".join(output_parts)
@@ -114,16 +124,20 @@ def parse_stream(
     if not got_result_event and not result["rate_limited"]:
         result["error"] = True
         result["error_message"] = "Stream ended without a result event (process crash?)"
-        _log_event(log_file, "stream_incomplete", {
-            "had_output": bool(result["output"]),
-        })
+        _log_event(
+            log_file,
+            "stream_incomplete",
+            {
+                "had_output": bool(result["output"]),
+            },
+        )
 
     result["wall_time_s"] = round(time.time() - start_time, 1)
     return result
 
 
 def _log_event(
-    log_file: Optional[str],
+    log_file: str | None,
     event_type: str,
     details: dict[str, Any],
 ) -> None:
@@ -142,7 +156,7 @@ def _log_event(
         print(f"[mjolnir] log write failed: {e}", file=sys.stderr)
 
 
-def stream_events(input_stream: IO[str], log_file: Optional[str] = None):
+def stream_events(input_stream: IO[str], log_file: str | None = None):
     """Yield parsed events as they arrive — enables real-time rate limit detection.
 
     Yields dicts with 'type' key: 'init', 'rate_limit', 'result', 'done'.
@@ -179,10 +193,14 @@ def stream_events(input_stream: IO[str], log_file: Optional[str] = None):
 
         if event_type == "system" and event.get("subtype") == "init":
             result["session_id"] = event.get("session_id")
-            _log_event(log_file, "session_init", {
-                "session_id": event.get("session_id"),
-                "model": event.get("model"),
-            })
+            _log_event(
+                log_file,
+                "session_init",
+                {
+                    "session_id": event.get("session_id"),
+                    "model": event.get("model"),
+                },
+            )
             yield {"type": "init", "session_id": event.get("session_id")}
 
         elif event_type == "assistant":
@@ -198,10 +216,14 @@ def stream_events(input_stream: IO[str], log_file: Optional[str] = None):
                 continue
             result["rate_limited"] = True
             result["rate_limit_resets_at"] = resets_at
-            _log_event(log_file, "rate_limit", {
-                "resets_at": resets_at,
-                "rate_limit_type": event.get("rateLimitType"),
-            })
+            _log_event(
+                log_file,
+                "rate_limit",
+                {
+                    "resets_at": resets_at,
+                    "rate_limit_type": event.get("rateLimitType"),
+                },
+            )
             # Yield immediately so orchestrator can act
             yield {
                 "type": "rate_limit",
@@ -211,20 +233,22 @@ def stream_events(input_stream: IO[str], log_file: Optional[str] = None):
 
         elif event_type == "result":
             got_result_event = True
-            result["cost_usd"] = float(
-                event.get("cost_usd") or event.get("total_cost_usd") or 0.0
-            )
+            result["cost_usd"] = float(event.get("cost_usd") or event.get("total_cost_usd") or 0.0)
             result["error"] = event.get("is_error", False)
             result["stop_reason"] = event.get("stop_reason")
             result["session_id"] = event.get("session_id", result["session_id"])
             result["duration_ms"] = event.get("duration_ms", 0)
             if event.get("is_error"):
                 result["error_message"] = event.get("result", "Unknown error")
-            _log_event(log_file, "result", {
-                "cost_usd": result["cost_usd"],
-                "is_error": result["error"],
-                "stop_reason": result["stop_reason"],
-            })
+            _log_event(
+                log_file,
+                "result",
+                {
+                    "cost_usd": result["cost_usd"],
+                    "is_error": result["error"],
+                    "stop_reason": result["stop_reason"],
+                },
+            )
 
     result["output"] = "".join(output_parts)
     if not got_result_event and not result["rate_limited"]:
