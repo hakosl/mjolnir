@@ -28,19 +28,16 @@ jobs:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
 
     steps:
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.OCI_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H ${{ secrets.OCI_INSTANCE_IP }} >> ~/.ssh/known_hosts 2>/dev/null || true
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
 
       - name: Deploy code
-        env:
-          HOST: ${{ secrets.OCI_INSTANCE_IP }}
-          USER: ${{ secrets.OCI_INSTANCE_USER }}
         run: |
-          ssh -o StrictHostKeyChecking=accept-new ${USER}@${HOST} << 'DEPLOY'
+          ssh -o StrictHostKeyChecking=accept-new opc@mjolnir << 'DEPLOY'
             set -e
 
             # Clone if first deploy, pull otherwise
@@ -66,11 +63,8 @@ jobs:
           DEPLOY
 
       - name: Health check
-        env:
-          HOST: ${{ secrets.OCI_INSTANCE_IP }}
-          USER: ${{ secrets.OCI_INSTANCE_USER }}
         run: |
-          ssh ${USER}@${HOST} << 'HEALTH'
+          ssh opc@mjolnir << 'HEALTH'
             set -e
             echo "=== System ==="
             uname -a
@@ -96,11 +90,8 @@ jobs:
 
       - name: Restart sessions (if requested)
         if: ${{ inputs.restart_sessions }}
-        env:
-          HOST: ${{ secrets.OCI_INSTANCE_IP }}
-          USER: ${{ secrets.OCI_INSTANCE_USER }}
         run: |
-          ssh ${USER}@${HOST} << 'RESTART'
+          ssh opc@mjolnir << 'RESTART'
             cd ~/mjolnir
             echo "Restarting mjolnir sessions..."
 
