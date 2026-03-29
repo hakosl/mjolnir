@@ -452,14 +452,24 @@ count_sprints() {
 # Build user prompts
 # ---------------------------------------------------------------------------
 build_planner_prompt() {
+    local sprint_limit=""
+    if [[ "$MAX_SPRINTS" -gt 0 ]]; then
+        sprint_limit="
+
+IMPORTANT: The maximum number of sprints is ${MAX_SPRINTS}. You MUST fit your plan into ${MAX_SPRINTS} sprint(s). Do not create more."
+    fi
+
     cat <<PROMPT
 Here is the project definition:
 
 \`\`\`toml
 $(cat "${PROJECT_DIR}/project.toml")
 \`\`\`
+${sprint_limit}
 
 Create a comprehensive build plan. Write the plan to \`plan.md\` in the current directory.
+
+CRITICAL REMINDER: All code must be written to the CURRENT WORKING DIRECTORY ($(pwd) or relative paths). Do NOT write to absolute paths outside this directory.
 PROMPT
 }
 

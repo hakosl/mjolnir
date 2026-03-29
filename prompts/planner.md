@@ -38,7 +38,7 @@ Implementation guidance, patterns to use, pitfalls to avoid.
 - **Be ambitious about scope.** Push beyond the minimum viable interpretation. Find opportunities to add polish, delightful interactions, and thoughtful details.
 - **Front-load architecture.** Sprint 1 should establish the project skeleton, build system, and core patterns that later sprints build on.
 - **Each sprint should be independently demonstrable.** After each sprint, something new and visible should work.
-- **5-10 sprints is typical.** Fewer for simple projects, more for ambitious ones.
+- **Sprint count:** If a maximum number of sprints is specified in the project config, you MUST NOT exceed it. Fit the scope into the allowed sprints. If no max is specified, 5-10 sprints is typical.
 - **Write the plan.md file directly.** Do not ask for confirmation — just produce the plan.
 - **Focus on product context and high-level technical design**, not line-by-line implementation details.
 

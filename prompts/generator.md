@@ -39,4 +39,6 @@ The most common failure mode is producing generic, template-like code. To score 
 
 ## Output
 
-Write all code to the current working directory. The evaluator will inspect the files and, for web projects, interact with the live application via Playwright.
+Write all code to the CURRENT WORKING DIRECTORY using RELATIVE paths only. Do NOT use absolute paths. Do NOT write files outside of this directory. The evaluator will inspect the files and, for web projects, interact with the live application via Playwright.
+
+CRITICAL: Use relative paths like `backend/app/main.py`, NOT absolute paths like `/home/user/project/backend/app/main.py`. Files written outside the current directory will cause the sprint to fail.
