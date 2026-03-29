@@ -1,6 +1,8 @@
 name: Deploy
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       restart_sessions:
@@ -10,44 +12,114 @@ on:
 
 concurrency:
   group: deploy
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
+  # Only deploy if CI passes
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   deploy:
     name: Deploy to Oracle Cloud
+    needs: ci
     runs-on: ubuntu-latest
     environment: production
+    # Skip if secrets aren't configured yet
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
 
     steps:
-      - name: Setup SSH key
+      - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.OCI_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          echo "${{ secrets.OCI_HOST_KEY }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh-keyscan -H ${{ secrets.OCI_INSTANCE_IP }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Deploy
+      - name: Deploy code
         env:
           HOST: ${{ secrets.OCI_INSTANCE_IP }}
           USER: ${{ secrets.OCI_INSTANCE_USER }}
         run: |
           ssh -o StrictHostKeyChecking=accept-new ${USER}@${HOST} << 'DEPLOY'
             set -e
+
+            # Clone if first deploy, pull otherwise
+            if [ ! -d ~/mjolnir ]; then
+              echo "First deploy — cloning repo..."
+              git clone https://github.com/${{ github.repository }}.git ~/mjolnir
+            else
+              echo "Pulling latest code..."
+              cd ~/mjolnir
+              git fetch origin main
+              git reset --hard origin/main
+            fi
+
             cd ~/mjolnir
 
-            echo "Pulling latest code..."
-            git pull --ff-only origin main
+            # Install/update Python deps
+            pip3 install --user tomli 2>/dev/null || true
 
-            echo "Deploy complete."
+            # Ensure scripts are executable
+            chmod +x mjolnir mjolnir.sh mjolnir-watchdog.sh install.sh
+
+            echo "Deploy complete: $(git log --oneline -1)"
           DEPLOY
 
-      - name: Restart sessions (optional)
+      - name: Health check
+        env:
+          HOST: ${{ secrets.OCI_INSTANCE_IP }}
+          USER: ${{ secrets.OCI_INSTANCE_USER }}
+        run: |
+          ssh ${USER}@${HOST} << 'HEALTH'
+            set -e
+            echo "=== System ==="
+            uname -a
+            echo ""
+
+            echo "=== Mjolnir version ==="
+            cd ~/mjolnir && git log --oneline -1
+            echo ""
+
+            echo "=== Dependencies ==="
+            python3 --version
+            node --version 2>/dev/null || echo "node: not installed"
+            claude --version 2>/dev/null || echo "claude: not installed (run 'claude setup-token' to authenticate)"
+            echo ""
+
+            echo "=== Running sessions ==="
+            tmux list-sessions 2>/dev/null || echo "No tmux sessions"
+            echo ""
+
+            echo "=== Projects ==="
+            ls ~/mjolnir/workspace/ 2>/dev/null || echo "No projects yet"
+          HEALTH
+
+      - name: Restart sessions (if requested)
         if: ${{ inputs.restart_sessions }}
         env:
           HOST: ${{ secrets.OCI_INSTANCE_IP }}
           USER: ${{ secrets.OCI_INSTANCE_USER }}
         run: |
           ssh ${USER}@${HOST} << 'RESTART'
-            echo "Checking for running mjolnir sessions..."
-            tmux list-sessions 2>/dev/null | grep mjolnir || echo "No sessions running"
+            cd ~/mjolnir
+            echo "Restarting mjolnir sessions..."
+
+            # Find projects with non-terminal state and restart them
+            for project_dir in workspace/*/; do
+              [ -f "${project_dir}state.json" ] || continue
+              phase=$(python3 -c "import json; print(json.load(open('${project_dir}state.json'))['phase'])" 2>/dev/null || echo "unknown")
+              name=$(basename "$project_dir")
+
+              if [ "$phase" = "complete" ] || [ "$phase" = "idle" ] || [ "$phase" = "halted" ]; then
+                echo "  ${name}: ${phase} (skipped)"
+                continue
+              fi
+
+              echo "  ${name}: ${phase} — restarting..."
+              session="mjolnir-${name}"
+              tmux kill-session -t "$session" 2>/dev/null || true
+              tmux new-session -d -s "$session" \
+                "bash ~/mjolnir/mjolnir.sh ~/mjolnir/${project_dir} 2>&1 | tee -a ~/mjolnir/${project_dir}mjolnir-tmux.log"
+              echo "  ${name}: restarted in tmux session '${session}'"
+            done
           RESTART
