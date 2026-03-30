@@ -214,12 +214,12 @@ run_agent() {
     # We monitor the file for rate_limit events and kill claude if needed.
     # Tee the raw JSONL stream to a debug file for troubleshooting
     local raw_stream_file="${PROJECT_DIR}/.raw_stream_${role}.jsonl"
-    echo "$user_prompt" | claude -p \
+    # cd into work_dir so claude -p runs from the correct directory
+    echo "$user_prompt" | (cd "$work_dir" && claude -p \
         --output-format stream-json \
         --verbose \
         --dangerously-skip-permissions \
-        --system-prompt "$(cat "${system_prompt_file}")" \
-        -d "$work_dir" \
+        --system-prompt "$(cat "${system_prompt_file}")") \
         2>/dev/null | tee "$raw_stream_file" | python3 "${LIB_DIR}/parse_stream.py" --stream > "$result_file" &
     local pipeline_pid=$!
 
@@ -631,26 +631,23 @@ main() {
             # Step 1: Send the project context as a seed message via -p
             #         This creates a session the user can resume interactively.
             local seed_session_id
-            seed_session_id="$(claude -p \
+            seed_session_id="$(cd "$WORK_DIR" && claude -p \
                 --dangerously-skip-permissions \
                 --output-format json \
                 --system-prompt "$(cat "${PROMPTS_DIR}/planner.md")" \
-                -d "$WORK_DIR" \
                 "$(build_planner_prompt)" 2>/dev/null \
                 | python3 -c "import json,sys; print(json.load(sys.stdin).get('session_id',''))" 2>/dev/null)" || true
 
             # Step 2: Resume that session interactively so the user can collaborate
             if [[ -n "$seed_session_id" ]]; then
-                claude \
+                (cd "$WORK_DIR" && claude \
                     --dangerously-skip-permissions \
-                    --resume "$seed_session_id" \
-                    -d "$WORK_DIR" || true
+                    --resume "$seed_session_id") || true
             else
                 # Fallback: just open a fresh interactive session with the prompt
-                claude \
+                (cd "$WORK_DIR" && claude \
                     --dangerously-skip-permissions \
-                    --system-prompt "$(cat "${PROMPTS_DIR}/planner.md")" \
-                    -d "$WORK_DIR" || true
+                    --system-prompt "$(cat "${PROMPTS_DIR}/planner.md")") || true
             fi
             planner_ok=true
 
