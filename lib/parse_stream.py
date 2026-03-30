@@ -71,9 +71,10 @@ def parse_stream(
                     output_parts.append(block.get("text", ""))
 
         elif event_type == "rate_limit_event":
-            # Ignore informational rate_limit_events with null resetsAt
-            # (emitted at session start as a status check, not an actual limit)
-            resets_at = event.get("resetsAt")
+            # resetsAt can be at top level or nested under rate_limit_info
+            rl_info = event.get("rate_limit_info", {})
+            resets_at = event.get("resetsAt") or rl_info.get("resetsAt")
+            # Ignore informational events with null resetsAt (startup status check)
             if resets_at is not None:
                 result["rate_limited"] = True
                 result["rate_limit_resets_at"] = resets_at
@@ -210,7 +211,8 @@ def stream_events(input_stream: IO[str], log_file: str | None = None):
                     output_parts.append(block.get("text", ""))
 
         elif event_type == "rate_limit_event":
-            resets_at = event.get("resetsAt")
+            rl_info = event.get("rate_limit_info", {})
+            resets_at = event.get("resetsAt") or rl_info.get("resetsAt")
             # Ignore informational events with null resetsAt (startup status check)
             if resets_at is None:
                 continue

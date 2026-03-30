@@ -39,7 +39,7 @@ def test_normal_result():
 
 
 def test_rate_limit_event():
-    """Rate limit event is detected with resetsAt."""
+    """Rate limit event is detected with resetsAt at top level."""
     events = [
         {"type": "system", "subtype": "init", "session_id": "sess-456"},
         {
@@ -62,6 +62,31 @@ def test_rate_limit_event():
         "Rate limited streams should not be flagged as error"
     )
     print("  PASS: rate_limit_event")
+
+
+def test_rate_limit_nested():
+    """Rate limit event with resetsAt nested under rate_limit_info."""
+    events = [
+        {"type": "system", "subtype": "init", "session_id": "sess-nested"},
+        {
+            "type": "rate_limit_event",
+            "rate_limit_info": {
+                "status": "rejected",
+                "resetsAt": 1774832400,
+                "rateLimitType": "five_hour",
+                "overageStatus": "rejected",
+                "isUsingOverage": False,
+            },
+        },
+    ]
+    stream = io.StringIO("\n".join(json.dumps(e) for e in events) + "\n")
+    result = parse_stream(stream)
+
+    assert result["rate_limited"] is True, "Expected rate_limited=True for nested resetsAt"
+    assert result["rate_limit_resets_at"] == 1774832400, (
+        f"Expected resetsAt 1774832400, got {result['rate_limit_resets_at']}"
+    )
+    print("  PASS: rate_limit_nested")
 
 
 def test_stream_crash_no_result():
@@ -171,6 +196,7 @@ if __name__ == "__main__":
     print("=== parse_stream tests ===")
     test_normal_result()
     test_rate_limit_event()
+    test_rate_limit_nested()
     test_stream_crash_no_result()
     test_null_cost()
     test_error_result()
