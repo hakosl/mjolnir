@@ -74,8 +74,11 @@ def parse_stream(
             # resetsAt can be at top level or nested under rate_limit_info
             rl_info = event.get("rate_limit_info", {})
             resets_at = event.get("resetsAt") or rl_info.get("resetsAt")
-            # Ignore informational events with null resetsAt (startup status check)
-            if resets_at is not None:
+            rl_status = event.get("status") or rl_info.get("status", "")
+            # Only treat as rate limited if status is "rejected" or "limited"
+            # "allowed" events are informational — just a status update
+            is_blocked = rl_status in ("rejected", "limited")
+            if resets_at is not None and is_blocked:
                 result["rate_limited"] = True
                 result["rate_limit_resets_at"] = resets_at
                 _log_event(
@@ -213,8 +216,10 @@ def stream_events(input_stream: IO[str], log_file: str | None = None):
         elif event_type == "rate_limit_event":
             rl_info = event.get("rate_limit_info", {})
             resets_at = event.get("resetsAt") or rl_info.get("resetsAt")
-            # Ignore informational events with null resetsAt (startup status check)
-            if resets_at is None:
+            rl_status = event.get("status") or rl_info.get("status", "")
+            # Only yield rate limit for actual blocks, not informational events
+            is_blocked = rl_status in ("rejected", "limited")
+            if resets_at is None or not is_blocked:
                 continue
             result["rate_limited"] = True
             result["rate_limit_resets_at"] = resets_at

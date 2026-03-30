@@ -38,8 +38,32 @@ def test_normal_result():
     print("  PASS: normal_result")
 
 
+def test_rate_limit_allowed_ignored():
+    """Rate limit event with status=allowed is NOT treated as rate limited."""
+    events = [
+        {"type": "system", "subtype": "init", "session_id": "sess-allowed"},
+        {
+            "type": "rate_limit_event",
+            "rate_limit_info": {
+                "status": "allowed",
+                "resetsAt": 1700000000,
+                "rateLimitType": "five_hour",
+                "overageStatus": "rejected",
+                "isUsingOverage": False,
+            },
+        },
+        {"type": "result", "cost_usd": 1.0, "is_error": False, "stop_reason": "end_turn"},
+    ]
+    stream = io.StringIO("\n".join(json.dumps(e) for e in events) + "\n")
+    result = parse_stream(stream)
+
+    assert result["rate_limited"] is False, "status=allowed should NOT trigger rate limit"
+    assert result["error"] is False
+    print("  PASS: rate_limit_allowed_ignored")
+
+
 def test_rate_limit_event():
-    """Rate limit event is detected with resetsAt at top level."""
+    """Rate limit event with status=limited is detected."""
     events = [
         {"type": "system", "subtype": "init", "session_id": "sess-456"},
         {
@@ -195,6 +219,7 @@ def test_log_file_writing():
 if __name__ == "__main__":
     print("=== parse_stream tests ===")
     test_normal_result()
+    test_rate_limit_allowed_ignored()
     test_rate_limit_event()
     test_rate_limit_nested()
     test_stream_crash_no_result()
