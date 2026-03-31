@@ -465,9 +465,9 @@ $(cat "${PROJECT_DIR}/project.toml")
 \`\`\`
 ${sprint_limit}
 
-Create a comprehensive build plan. Write the plan to \`plan.md\` in the current directory.
+Create a comprehensive build plan. Write the plan to \`plan.md\` in the current directory using a RELATIVE path.
 
-CRITICAL REMINDER: All code must be written to the CURRENT WORKING DIRECTORY ($(pwd) or relative paths). Do NOT write to absolute paths outside this directory.
+CRITICAL: Your current working directory is \`${WORK_DIR}\`. Write ALL files using RELATIVE paths only (e.g., \`plan.md\`, not \`${WORK_DIR}/plan.md\`). Do NOT use absolute paths.
 PROMPT
 }
 
@@ -510,6 +510,14 @@ Implement Sprint ${sprint} from the plan above. Read the sprint contract careful
 \`\`\`markdown
 $(cat "${PROMPTS_DIR}/rubric.md")
 \`\`\`
+
+## CRITICAL: File Paths
+
+Your current working directory is: \`${WORK_DIR}\`
+You MUST write ALL files using RELATIVE paths (e.g., \`app.py\`, \`static/index.html\`).
+Do NOT use absolute paths. Any files written outside the current directory will NOT be tracked by git and the sprint will FAIL.
+
+Before writing any file, verify you are using a relative path, not an absolute one starting with \`/\`.
 
 Start implementing now. Write complete, runnable code. Commit your work with descriptive messages.
 If this project has a web UI, ensure the dev server is running when you finish so the evaluator can interact with it.
