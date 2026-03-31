@@ -1,0 +1,56 @@
+# Mjolnir E2E Smoke Test — Minimal Web App
+#
+# A small full-stack app: Python backend serves seeded SQLite data via REST,
+# frontend renders it in a chart. Exercises the full pipeline:
+#   - Planner creates a 1-sprint plan
+#   - Generator builds backend + frontend + seed script
+#   - Evaluator reads code, screenshots the UI via Playwright, scores it
+#
+# Designed to run with a fast/cheap model (Haiku) in ~3-5 minutes.
+
+[project]
+name = "e2e-smoke"
+description = """A minimal full-stack web app for E2E testing.
+
+Backend: Python (Flask or FastAPI) serving JSON from a seeded SQLite database.
+Frontend: Single HTML page with a chart (Chart.js or similar CDN library) rendering the data.
+Seed script: Python script that creates the DB and inserts sample data (monthly revenue for 12 months).
+
+The app must be startable with a single command and serve on port 5173."""
+
+goals = [
+    "Create a seed script that initializes an SQLite DB with a 'monthly_revenue' table (month TEXT, revenue INTEGER) and inserts 12 rows of sample data",
+    "Build a Python backend (Flask preferred for simplicity) that serves GET /api/revenue returning all rows as JSON, listening on port 5173",
+    "Build a single index.html that fetches /api/revenue and renders a bar chart using Chart.js from CDN",
+    "Provide a start.sh script that runs the seed script then starts the server",
+]
+
+tech_stack = "Python, Flask, SQLite, Chart.js (CDN), vanilla HTML/JS"
+constraints = [
+    "No npm or node required — frontend is plain HTML with CDN scripts",
+    "Backend must serve both API and static files (index.html)",
+    "Must work with Python 3.10+ standard library plus flask",
+    "Single start.sh script to seed DB and start server on port 5173",
+]
+
+[planning]
+mode = "auto"
+
+[scoring]
+[scoring.weights]
+design_quality = 0.35
+originality = 0.25
+craft = 0.25
+functionality = 0.15
+
+# Low thresholds for E2E smoke test — we just need it to work
+[scoring.thresholds]
+design_quality = 4
+originality = 3
+craft = 4
+functionality = 5
+
+[budget]
+max_retries = 2
+max_sprints = 1
+budget_per_sprint = 5

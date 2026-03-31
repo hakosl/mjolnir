@@ -1,0 +1,55 @@
+name: E2E Smoke Test
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Nightly at 03:00 UTC
+    - cron: "0 3 * * *"
+
+jobs:
+  e2e:
+    name: E2E Smoke Test (OCI)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Wait for Tailscale
+        run: |
+          for i in $(seq 1 30); do
+            tailscale status && break
+            sleep 2
+          done
+
+      - name: Run E2E smoke test
+        env:
+          E2E_TIMEOUT: "600"
+        run: bash tests/e2e/run_e2e.sh
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          ssh opc@mjolnir "cat /home/opc/mjolnir/workspace/e2e-smoke/e2e.log 2>/dev/null" > e2e.log || true
+          ssh opc@mjolnir "cat /home/opc/mjolnir/workspace/e2e-smoke/state.json 2>/dev/null" > state.json || true
+          ssh opc@mjolnir "cat /home/opc/mjolnir/workspace/e2e-smoke/sprints/01/eval_report.json 2>/dev/null" > eval_report.json || true
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: |
+            e2e.log
+            state.json
+            eval_report.json
+
+      - name: Cleanup
+        if: always()
+        run: bash tests/e2e/run_e2e.sh --cleanup || true

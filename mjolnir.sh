@@ -14,6 +14,9 @@ PROMPTS_DIR="${SCRIPT_DIR}/prompts"
 # Max rate limit retries before giving up (prevents infinite recursion)
 MAX_RATE_LIMIT_RETRIES=5
 
+# Monitor poll interval (seconds). Override with env var for faster tests.
+MONITOR_INTERVAL="${MJOLNIR_MONITOR_INTERVAL:-10}"
+
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
@@ -78,15 +81,8 @@ MAX_RETRIES="$(read_config 'budget.max_retries' '3')"
 BUDGET_PER_SPRINT="$(read_config 'budget.budget_per_sprint' '80')"
 MAX_SPRINTS="$(read_config 'budget.max_sprints' '0')"
 
-# Output directory — where generated code lives (separate git repo)
-OUTPUT_DIR_RAW="$(read_config 'project.output_dir' 'src')"
-
-# Resolve output_dir: absolute paths used as-is, relative paths resolved from PROJECT_DIR
-if [[ "$OUTPUT_DIR_RAW" = /* ]]; then
-    WORK_DIR="$OUTPUT_DIR_RAW"
-else
-    WORK_DIR="${PROJECT_DIR}/${OUTPUT_DIR_RAW}"
-fi
+# Work directory — generated code lives in PROJECT_DIR/<project-name>
+WORK_DIR="${PROJECT_DIR}/${PROJECT_NAME}"
 
 # Planning mode — env var override takes precedence over config
 PLANNING_MODE="${MJOLNIR_PLANNING_MODE:-$(read_config 'planning.mode' 'interactive')}"
@@ -226,8 +222,8 @@ run_agent() {
     # Monitor: check for rate_limit or done events every 10s, show progress
     local elapsed=0
     while kill -0 "$pipeline_pid" 2>/dev/null; do
-        sleep 10
-        elapsed=$((elapsed + 10))
+        sleep "$MONITOR_INTERVAL"
+        elapsed=$((elapsed + MONITOR_INTERVAL))
         # Check if we got a "done" event or a result with end_turn (agent completed)
         if grep -q '"type": "done"' "$result_file" 2>/dev/null; then
             break
@@ -247,7 +243,9 @@ run_agent() {
             break
         fi
         # Progress indicator every 30s
-        if (( elapsed % 30 == 0 )); then
+        local progress_interval=$(( MONITOR_INTERVAL * 3 ))
+        if (( progress_interval < 10 )); then progress_interval=10; fi
+        if (( elapsed % progress_interval == 0 )); then
             local event_count
             event_count="$(wc -l < "$result_file" 2>/dev/null || echo 0)"
             local file_count
