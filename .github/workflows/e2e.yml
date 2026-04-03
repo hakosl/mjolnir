@@ -36,9 +36,9 @@ jobs:
       - name: Collect logs on failure
         if: failure()
         run: |
-          ssh opc@mjolnir "cat /home/opc/mjolnir/workspace/e2e-smoke/e2e.log 2>/dev/null" > e2e.log || true
-          ssh opc@mjolnir "cat /home/opc/mjolnir/workspace/e2e-smoke/state.json 2>/dev/null" > state.json || true
-          ssh opc@mjolnir "cat /home/opc/mjolnir/workspace/e2e-smoke/sprints/01/eval_report.json 2>/dev/null" > eval_report.json || true
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null opc@mjolnir "cat /home/opc/mjolnir/workspace/e2e-smoke/e2e.log 2>/dev/null" > e2e.log || true
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null opc@mjolnir "cat /home/opc/mjolnir/workspace/e2e-smoke/state.json 2>/dev/null" > state.json || true
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null opc@mjolnir "cat /home/opc/mjolnir/workspace/e2e-smoke/sprints/01/eval_report.json 2>/dev/null" > eval_report.json || true
 
       - name: Upload logs
         if: failure()
