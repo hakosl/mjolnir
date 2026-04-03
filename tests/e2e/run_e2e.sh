@@ -67,7 +67,7 @@ cmd_run() {
 
     # Step 1: Deploy latest code to server
     echo "--- Step 1: Deploy latest code ---"
-    remote "cd '${REMOTE_MJOLNIR}' && git pull --ff-only" || die "git pull failed"
+    remote "cd '${REMOTE_MJOLNIR}' && git checkout -- . && git clean -fd --exclude=workspace/ && git pull --ff-only" || die "git pull failed"
 
     # Step 2: Clean up any previous e2e run
     echo "--- Step 2: Clean previous run ---"
