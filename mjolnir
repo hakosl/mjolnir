@@ -374,6 +374,76 @@ PYEOF
     cmd_run "$name"
 }
 
+cmd_clean() {
+    local name="${1:-}"
+
+    if [[ -z "$name" ]]; then
+        # Clean all projects
+        echo "This will delete ALL project data (state, logs, sprints, generated code)."
+        echo "Project configs (project.toml) will be preserved."
+        echo ""
+        read -r -p "Continue? [y/N] " confirm
+        [[ "$confirm" =~ ^[yY]$ ]] || { echo "Aborted."; return; }
+
+        for dir in "${WORKSPACE_DIR}"/*/; do
+            [[ -f "${dir}project.toml" ]] || continue
+            local pname
+            pname="$(basename "$dir")"
+            _clean_project "$dir" "$pname"
+        done
+        echo ""
+        echo "All project data cleaned."
+        return
+    fi
+
+    local project_dir
+    project_dir="$(resolve_project "$name")"
+    _clean_project "$project_dir" "$name"
+}
+
+_clean_project() {
+    local project_dir="$1"
+    local pname="$2"
+
+    # Kill tmux session if running
+    local session
+    session="$(session_name "$project_dir")"
+    if tmux has-session -t "$session" 2>/dev/null; then
+        tmux kill-session -t "$session"
+        echo "  Killed session for '${pname}'"
+    fi
+
+    # Read project name from config for work dir
+    local project_name
+    project_name="$(python3 - "${project_dir}/project.toml" <<'PYEOF' 2>/dev/null || echo ""
+import sys
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
+with open(sys.argv[1], "rb") as f:
+    c = tomllib.load(f)
+print(c.get("project", {}).get("name", ""))
+PYEOF
+)"
+
+    # Remove generated code (work dir)
+    if [[ -n "$project_name" && -d "${project_dir}/${project_name}" ]]; then
+        rm -rf "${project_dir:?}/${project_name}"
+        echo "  Removed work dir: ${pname}/${project_name}/"
+    fi
+
+    # Remove state, logs, sprints, agent output
+    rm -f "${project_dir}/state.json" "${project_dir}/state.json.lock"
+    rm -f "${project_dir}/mjolnir.log" "${project_dir}/mjolnir-tmux.log"
+    rm -f "${project_dir}/.last_agent_output"
+    rm -f "${project_dir}/.raw_stream_"*.jsonl
+    rm -f "${project_dir}/e2e.log"
+    rm -rf "${project_dir}/sprints"
+
+    echo "  Cleaned '${pname}' (project.toml preserved)"
+}
+
 cmd_watchdog() {
     local action="${1:-status}"
 
@@ -440,6 +510,10 @@ MONITORING:
   status <name>           Show detailed project status + latest scores
   logs <name>             Tail structured log (Ctrl+C to stop)
 
+CLEANUP:
+  clean <name>            Remove all generated data for a project (keeps project.toml)
+  clean                   Clean ALL projects (prompts for confirmation)
+
 RELIABILITY:
   watchdog                Show installed watchdogs
   watchdog install <name> Auto-restart crashed sessions (cron, every 5m)
@@ -474,6 +548,7 @@ case "$command" in
     logs)       cmd_logs "$@" ;;
     pause)      cmd_pause "$@" ;;
     resume)     cmd_resume "$@" ;;
+    clean)      cmd_clean "$@" ;;
     watchdog)   cmd_watchdog "$@" ;;
     help|--help|-h) cmd_help ;;
     *)
