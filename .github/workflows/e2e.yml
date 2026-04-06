@@ -2,9 +2,6 @@ name: E2E Smoke Test
 
 on:
   workflow_dispatch:
-  schedule:
-    # Nightly at 03:00 UTC
-    - cron: "0 3 * * *"
 
 jobs:
   e2e:
@@ -21,13 +18,6 @@ jobs:
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
 
-      - name: Wait for Tailscale
-        run: |
-          for i in $(seq 1 30); do
-            tailscale status && break
-            sleep 2
-          done
-
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -35,9 +25,6 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           echo -e "Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null" > ~/.ssh/config
           chmod 600 ~/.ssh/config
-
-      - name: Verify SSH connectivity
-        run: ssh opc@100.106.150.47 "echo 'SSH OK'"
 
       - name: Run E2E smoke test
         env:
