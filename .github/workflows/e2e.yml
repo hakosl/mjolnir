@@ -48,10 +48,13 @@ jobs:
           ssh-keyscan -H mjolnir >> ~/.ssh/known_hosts 2>/dev/null || true
           ssh-keyscan -H 100.106.150.47 >> ~/.ssh/known_hosts 2>/dev/null || true
           echo ""
-          echo "=== SSH connectivity test (tailscale ssh) ==="
-          tailscale ssh opc@mjolnir "echo 'Tailscale SSH OK'" 2>&1 || echo "tailscale ssh via hostname failed"
+          echo "=== SSH test 1: tailscale ssh ==="
+          tailscale ssh opc@mjolnir "echo 'Tailscale SSH OK'" 2>&1 || echo "tailscale ssh failed (expected - forces strict host key)"
           echo ""
-          echo "=== SSH connectivity test (regular ssh via tailscale IP) ==="
+          echo "=== SSH test 2: ssh via tailscale nc ProxyCommand ==="
+          ssh -o ProxyCommand="tailscale nc %h %p" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null opc@mjolnir "echo 'SSH via tailscale nc OK'" 2>&1 || echo "ssh via tailscale nc failed"
+          echo ""
+          echo "=== SSH test 3: regular ssh to tailscale IP ==="
           ssh opc@100.106.150.47 "echo 'Regular SSH via IP OK'" 2>&1 || echo "regular ssh via IP failed"
           echo ""
           echo "=== Debug: netcheck ==="
