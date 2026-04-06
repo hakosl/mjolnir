@@ -31,7 +31,7 @@ E2E_TIMEOUT="${E2E_TIMEOUT:-600}"  # 10 minutes default
 die() { echo "FAIL: $1" >&2; exit 1; }
 
 remote() {
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$REMOTE" "$@" 2>&1
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$REMOTE" "$@" 2>&1
 }
 
 # ---------------------------------------------------------------------------
@@ -81,7 +81,7 @@ cmd_run() {
     remote "
         mkdir -p '${REMOTE_PROJECT}'
     "
-    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${SCRIPT_DIR}/project.toml" "${REMOTE}:${REMOTE_PROJECT}/project.toml"
+    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "${SCRIPT_DIR}/project.toml" "${REMOTE}:${REMOTE_PROJECT}/project.toml"
     echo "Copied project.toml to server"
 
     # Step 4: Start mjolnir in tmux
