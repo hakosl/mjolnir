@@ -1,21 +1,22 @@
-Help the user design a mjolnir project and build plan, then deploy it to the OCI instance.
+Design a mjolnir project and build plan collaboratively, then deploy it to the OCI instance.
 
-## Step 1: Gather Requirements
+## Instructions for Claude
 
-Ask the user what they want to build. Clarify:
-- What does the app do?
-- What tech stack? (The OCI instance has Python 3.10, Node 18, Flask, Playwright+Chromium)
-- How complex? (1 sprint = simple, 2-3 = moderate)
+When this skill is invoked:
 
-## Step 2: Enter Plan Mode
+1. **Ask the user** what they want to build (if not already described). Clarify: what does it do, what tech stack, how complex (1-2 sprints for most projects).
 
-Use Claude plan mode to draft the project.toml and plan.md together with the user. Keep plans simple — 1-2 sprints for most projects.
+2. **Enter plan mode** by calling the `EnterPlanMode` tool. In plan mode, draft both `project.toml` and `plan.md` for the user to review and approve. Use the reference formats below.
 
-## Step 3: Write Files
+3. **After plan approval**, exit plan mode. Write the files to `workspace/<project-name>/project.toml` and `workspace/<project-name>/plan.md`.
 
-Save to `workspace/<project-name>/`:
-- `project.toml` — project config
-- `plan.md` — the build plan (optional — if omitted, the planner agent generates one)
+Then continue to Step 4 (Deploy) and Step 5 (Monitor) below.
+
+## Reference: project.toml
+
+See `templates/project.toml.example` for the full template with all optional fields commented.
+
+Minimal required:
 
 ### project.toml — Required Fields
 
