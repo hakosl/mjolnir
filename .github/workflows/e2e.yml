@@ -28,37 +28,16 @@ jobs:
             sleep 2
           done
 
-      - name: Tailscale connectivity check
+      - name: Setup SSH
         run: |
-          echo "=== Tailscale status ==="
-          tailscale status
-          echo ""
-          echo "=== Tailscale IP of this node ==="
-          tailscale ip -4
-          echo ""
-          echo "=== Ping mjolnir server (Tailscale IP) ==="
-          tailscale ping -c 1 100.106.150.47 || echo "Tailscale ping failed"
-          echo ""
-          echo "=== Configure SSH to skip host key check ==="
           mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
           echo -e "Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null" > ~/.ssh/config
           chmod 600 ~/.ssh/config
-          # Also scan the host key so tailscale ssh doesn't complain
-          ssh-keyscan -H mjolnir.tail7093c5.ts.net >> ~/.ssh/known_hosts 2>/dev/null || true
-          ssh-keyscan -H mjolnir >> ~/.ssh/known_hosts 2>/dev/null || true
-          ssh-keyscan -H 100.106.150.47 >> ~/.ssh/known_hosts 2>/dev/null || true
-          echo ""
-          echo "=== SSH test 1: tailscale ssh ==="
-          tailscale ssh opc@mjolnir "echo 'Tailscale SSH OK'" 2>&1 || echo "tailscale ssh failed (expected - forces strict host key)"
-          echo ""
-          echo "=== SSH test 2: ssh via tailscale nc ProxyCommand ==="
-          ssh -o ProxyCommand="tailscale nc %h %p" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null opc@mjolnir "echo 'SSH via tailscale nc OK'" 2>&1 || echo "ssh via tailscale nc failed"
-          echo ""
-          echo "=== SSH test 3: regular ssh to tailscale IP ==="
-          ssh opc@100.106.150.47 "echo 'Regular SSH via IP OK'" 2>&1 || echo "regular ssh via IP failed"
-          echo ""
-          echo "=== Debug: netcheck ==="
-          tailscale netcheck 2>&1 | head -20
+
+      - name: Verify SSH connectivity
+        run: ssh opc@100.106.150.47 "echo 'SSH OK'"
 
       - name: Run E2E smoke test
         env:
@@ -68,9 +47,9 @@ jobs:
       - name: Collect logs on failure
         if: failure()
         run: |
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null opc@mjolnir "cat /home/opc/mjolnir/workspace/e2e-smoke/e2e.log 2>/dev/null" > e2e.log || true
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null opc@mjolnir "cat /home/opc/mjolnir/workspace/e2e-smoke/state.json 2>/dev/null" > state.json || true
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null opc@mjolnir "cat /home/opc/mjolnir/workspace/e2e-smoke/sprints/01/eval_report.json 2>/dev/null" > eval_report.json || true
+          ssh opc@100.106.150.47 "cat /home/opc/mjolnir/workspace/e2e-smoke/e2e.log 2>/dev/null" > e2e.log || true
+          ssh opc@100.106.150.47 "cat /home/opc/mjolnir/workspace/e2e-smoke/state.json 2>/dev/null" > state.json || true
+          ssh opc@100.106.150.47 "cat /home/opc/mjolnir/workspace/e2e-smoke/sprints/01/eval_report.json 2>/dev/null" > eval_report.json || true
 
       - name: Upload logs
         if: failure()
