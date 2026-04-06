@@ -2,6 +2,11 @@ name: E2E Smoke Test
 
 on:
   workflow_dispatch:
+    inputs:
+      cleanup:
+        description: "Clean up e2e project after run"
+        type: boolean
+        default: true
 
 jobs:
   e2e:
@@ -49,5 +54,5 @@ jobs:
             eval_report.json
 
       - name: Cleanup
-        if: always()
+        if: ${{ always() && inputs.cleanup }}
         run: bash tests/e2e/run_e2e.sh --cleanup || true
