@@ -618,6 +618,24 @@ main() {
     # PHASE 1: PLANNING
     # -----------------------------------------------------------------------
     if [[ "$phase" == "idle" || "$phase" == "planning" ]]; then
+        # Skip planning if plan.md already exists (e.g., uploaded via deploy --plan)
+        if [[ -f "${WORK_DIR}/plan.md" ]]; then
+            echo ""
+            echo "=== Phase: PLANNING (skipped — plan.md already exists) ==="
+            log_event "phase_start" "phase=planning" "mode=pre-existing"
+
+            local total_sprints
+            total_sprints="$(count_sprints)"
+            if [[ "$MAX_SPRINTS" -gt 0 && "$total_sprints" -gt "$MAX_SPRINTS" ]]; then
+                total_sprints="$MAX_SPRINTS"
+            fi
+
+            state_cmd transition generating sprint=1 attempt=0 total_sprints="$total_sprints" > /dev/null
+            log_event "planning_done" "total_sprints=${total_sprints}" "source=pre-existing"
+            notify "Using existing plan.md. ${total_sprints} sprints." "success"
+            echo "Using existing plan: ${total_sprints} sprints"
+        else
+
         echo ""
         echo "=== Phase: PLANNING (mode: ${PLANNING_MODE}) ==="
         state_cmd transition planning > /dev/null
@@ -698,6 +716,8 @@ main() {
         log_event "planning_done" "total_sprints=${total_sprints}"
         notify "Planning done. ${total_sprints} sprints planned." "success"
         echo "Plan complete: ${total_sprints} sprints"
+
+        fi  # end of plan.md exists check
     fi
 
     # -----------------------------------------------------------------------

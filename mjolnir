@@ -444,6 +444,223 @@ PYEOF
     echo "  Cleaned '${pname}' (project.toml preserved)"
 }
 
+# ---------------------------------------------------------------------------
+# Remote commands (OCI instance via SSH)
+# ---------------------------------------------------------------------------
+REMOTE_HOST="${MJOLNIR_REMOTE:-opc@100.106.150.47}"
+REMOTE_MJOLNIR="/home/opc/mjolnir"
+REMOTE_WORKSPACE="${REMOTE_MJOLNIR}/workspace"
+
+remote_ssh() {
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$REMOTE_HOST" "$@" 2>&1
+}
+
+cmd_deploy() {
+    local name=""
+    local plan_file=""
+    local no_run=false
+
+    for arg in "$@"; do
+        case "$arg" in
+            --no-run)   no_run=true ;;
+            --plan=*)   plan_file="${arg#--plan=}" ;;
+            -*)         echo "Unknown flag: ${arg}" >&2; exit 1 ;;
+            *)          name="$arg" ;;
+        esac
+    done
+
+    if [[ -z "$name" ]]; then
+        echo "Usage: mjolnir deploy <project-name> [--plan=<path>] [--no-run]"
+        echo ""
+        echo "Uploads project to OCI instance and starts a run."
+        echo "Looks for project.toml in workspace/<name>/ or current directory."
+        echo ""
+        echo "Options:"
+        echo "  --plan=<path>   Upload a plan.md file (skips planner agent)"
+        echo "  --no-run        Upload only, don't start the run"
+        exit 1
+    fi
+
+    # Find project.toml locally
+    local project_dir
+    project_dir="$(resolve_project "$name")"
+    local project_toml="${project_dir}/project.toml"
+
+    if [[ ! -f "$project_toml" ]]; then
+        die "No project.toml found for '${name}'"
+    fi
+
+    # Read project name from config
+    local project_name
+    project_name="$(python3 - "$project_toml" <<'PYEOF' 2>/dev/null || echo "$name"
+import sys
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
+with open(sys.argv[1], "rb") as f:
+    c = tomllib.load(f)
+print(c.get("project", {}).get("name", ""))
+PYEOF
+)"
+
+    local remote_project="${REMOTE_WORKSPACE}/${name}"
+    local remote_work="${remote_project}/${project_name}"
+
+    echo "Deploying '${name}' to ${REMOTE_HOST}..."
+
+    # Step 1: Update mjolnir code on server
+    echo "  Updating mjolnir code..."
+    remote_ssh "cd '${REMOTE_MJOLNIR}' && git checkout -- . && git clean -fd --exclude=workspace/ && git pull --ff-only" || die "git pull failed"
+
+    # Step 2: Kill any existing run
+    remote_ssh "
+        for s in \$(tmux ls 2>/dev/null | grep mjolnir | cut -d: -f1); do
+            tmux kill-session -t \"\$s\" 2>/dev/null || true
+        done
+    " || true
+
+    # Step 3: Clean previous run data (keep project.toml if re-deploying)
+    remote_ssh "
+        rm -rf '${remote_project}/sprints' '${remote_project}/state.json' '${remote_project}/mjolnir.log'
+        rm -rf '${remote_work}'
+        mkdir -p '${remote_project}'
+    "
+
+    # Step 4: Upload project.toml
+    echo "  Uploading project.toml..."
+    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+        "$project_toml" "${REMOTE_HOST}:${remote_project}/project.toml"
+
+    # Step 5: Upload plan.md if provided
+    if [[ -n "$plan_file" ]]; then
+        if [[ ! -f "$plan_file" ]]; then
+            die "Plan file not found: ${plan_file}"
+        fi
+        echo "  Uploading plan.md..."
+        remote_ssh "mkdir -p '${remote_work}'"
+        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+            "$plan_file" "${REMOTE_HOST}:${remote_work}/plan.md"
+
+        # Count sprints from plan and show summary
+        local sprint_count
+        sprint_count="$(grep -cE '^##+ Sprint [0-9]+' "$plan_file" 2>/dev/null)" || sprint_count="0"
+        if [[ "$sprint_count" -eq 0 ]]; then
+            sprint_count="$(grep -ciE 'sprint [0-9]+' "$plan_file" 2>/dev/null)" || sprint_count="1"
+        fi
+        echo "  Plan uploaded (${sprint_count} sprints) — planner phase will be skipped"
+    fi
+
+    echo "  Deployed to ${remote_project}"
+
+    if [[ "$no_run" == "true" ]]; then
+        echo ""
+        echo "Project uploaded. Start manually with: mjolnir remote-run ${name}"
+        return
+    fi
+
+    # Step 6: Start mjolnir
+    cmd_remote_run "$name"
+}
+
+cmd_remote_run() {
+    local name="${1:-}"
+    if [[ -z "$name" ]]; then
+        echo "Usage: mjolnir remote-run <project-name>"
+        exit 1
+    fi
+
+    local remote_project="${REMOTE_WORKSPACE}/${name}"
+    local tmux_session="mjolnir-${name}"
+
+    echo "  Starting mjolnir on server..."
+    remote_ssh "
+        tmux kill-session -t '${tmux_session}' 2>/dev/null || true
+        tmux new-session -d -s '${tmux_session}' \
+            'cd ${REMOTE_MJOLNIR} && MJOLNIR_PLANNING_MODE=auto bash mjolnir.sh ${remote_project} 2>&1 | tee ${remote_project}/e2e.log'
+    " || die "Failed to start tmux session"
+
+    echo ""
+    echo "Mjolnir running on OCI instance."
+    echo "  Monitor:  mjolnir remote-status ${name}"
+    echo "  Logs:     mjolnir remote-logs ${name}"
+}
+
+cmd_remote_status() {
+    local name="${1:-}"
+
+    if [[ -z "$name" ]]; then
+        echo "REMOTE PROJECTS (${REMOTE_HOST})"
+        echo "================================"
+        remote_ssh "
+            for dir in ${REMOTE_WORKSPACE}/*/; do
+                [ -f \"\${dir}project.toml\" ] || continue
+                pname=\$(basename \"\$dir\")
+                phase='idle'
+                if [ -f \"\${dir}state.json\" ]; then
+                    phase=\$(python3 -c \"import json; print(json.load(open('\${dir}state.json'))['phase'])\" 2>/dev/null || echo 'idle')
+                fi
+                printf '  %-25s  phase=%s\n' \"\$pname\" \"\$phase\"
+            done
+        "
+        return
+    fi
+
+    local remote_project="${REMOTE_WORKSPACE}/${name}"
+    remote_ssh "
+        if [ ! -f '${remote_project}/state.json' ]; then
+            echo 'Project not started'
+            exit 0
+        fi
+        python3 -c \"
+import json, time
+with open('${remote_project}/state.json') as f:
+    s = json.load(f)
+phase = s['phase']
+sprint = s['sprint']
+total = s['total_sprints']
+attempt = s['attempt']
+costs = s['costs']
+total_cost = sum(costs.values())
+updated = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(s['updated_at']))
+print(f'Project: ${name}')
+print(f'Phase:   {phase}')
+print(f'Sprint:  {sprint}/{total} (attempt {attempt})')
+print(f'Cost:    \${total_cost:.2f}')
+print(f'Updated: {updated}')
+if s.get('last_error'):
+    print(f'Error:   {s[\\\"last_error\\\"]}')
+\"
+        # Check tmux
+        tmux has-session -t 'mjolnir-${name}' 2>/dev/null && echo 'Running: yes' || echo 'Running: no'
+        # Latest eval
+        latest=\$(find '${remote_project}/sprints' -name 'eval_report.json' 2>/dev/null | sort -r | head -1)
+        if [ -n \"\$latest\" ]; then
+            echo ''
+            python3 -c \"
+import json
+with open('\$latest') as f:
+    r = json.load(f)
+scores = r.get('scores', {})
+print('Scores: ' + ', '.join(f'{k}={v}' for k,v in scores.items()))
+if r.get('feedback'):
+    print(f'Feedback: {r[\\\"feedback\\\"][:200]}')
+\"
+        fi
+    "
+}
+
+cmd_remote_logs() {
+    local name="${1:-}"
+    local lines="${2:-30}"
+    if [[ -z "$name" ]]; then
+        echo "Usage: mjolnir remote-logs <project-name> [lines]"
+        exit 1
+    fi
+    local remote_project="${REMOTE_WORKSPACE}/${name}"
+    remote_ssh "tail -${lines} '${remote_project}/e2e.log' 2>/dev/null || echo 'No logs yet'"
+}
+
 cmd_watchdog() {
     local action="${1:-status}"
 
@@ -514,12 +731,22 @@ CLEANUP:
   clean <name>            Remove all generated data for a project (keeps project.toml)
   clean                   Clean ALL projects (prompts for confirmation)
 
+REMOTE (OCI instance):
+  deploy <name>           Upload project to OCI and start a run
+  deploy <name> --plan=<file>  Upload with a pre-written plan (skips planner)
+  deploy <name> --no-run  Upload only, don't start
+  remote-run <name>       Start a run on already-deployed project
+  remote-status           Show all remote projects
+  remote-status <name>    Show detailed remote project status
+  remote-logs <name>      Show last 30 lines of remote logs
+
 RELIABILITY:
   watchdog                Show installed watchdogs
   watchdog install <name> Auto-restart crashed sessions (cron, every 5m)
   watchdog remove <name>  Remove watchdog for a project
 
 ENVIRONMENT:
+  MJOLNIR_REMOTE          SSH target for remote commands (default: opc@100.106.150.47)
   MJOLNIR_WORKSPACE       Override workspace directory (default: ./workspace)
   MJOLNIR_NTFY_TOPIC      ntfy.sh topic for push notifications
   MJOLNIR_NTFY_SERVER     ntfy.sh server URL
@@ -549,6 +776,10 @@ case "$command" in
     pause)      cmd_pause "$@" ;;
     resume)     cmd_resume "$@" ;;
     clean)      cmd_clean "$@" ;;
+    deploy)     cmd_deploy "$@" ;;
+    remote-run) cmd_remote_run "$@" ;;
+    remote-status|rs) cmd_remote_status "$@" ;;
+    remote-logs|rl)   cmd_remote_logs "$@" ;;
     watchdog)   cmd_watchdog "$@" ;;
     help|--help|-h) cmd_help ;;
     *)
