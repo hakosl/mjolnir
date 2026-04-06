@@ -28,6 +28,31 @@ jobs:
             sleep 2
           done
 
+      - name: Tailscale connectivity check
+        run: |
+          echo "=== Tailscale status ==="
+          tailscale status
+          echo ""
+          echo "=== Tailscale IP of this node ==="
+          tailscale ip -4
+          echo ""
+          echo "=== Ping mjolnir server (MagicDNS) ==="
+          tailscale ping mjolnir --timeout=10s || echo "MagicDNS ping failed, trying FQDN..."
+          echo ""
+          echo "=== Ping mjolnir server (FQDN) ==="
+          tailscale ping mjolnir.tail7093c5.ts.net --timeout=10s || echo "FQDN ping failed, trying IP..."
+          echo ""
+          echo "=== Ping mjolnir server (Tailscale IP) ==="
+          tailscale ping 100.106.150.47 --timeout=10s || echo "IP ping also failed"
+          echo ""
+          echo "=== SSH connectivity test ==="
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 opc@mjolnir "echo 'SSH OK'" 2>&1 || \
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 opc@100.106.150.47 "echo 'SSH via IP OK'" 2>&1 || \
+          echo "SSH failed via both hostname and IP"
+          echo ""
+          echo "=== Debug: netcheck ==="
+          tailscale netcheck 2>&1 | head -20
+
       - name: Run E2E smoke test
         env:
           E2E_TIMEOUT: "600"
@@ -36,9 +61,9 @@ jobs:
       - name: Collect logs on failure
         if: failure()
         run: |
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null opc@100.106.150.47 "cat /home/opc/mjolnir/workspace/e2e-smoke/e2e.log 2>/dev/null" > e2e.log || true
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null opc@100.106.150.47 "cat /home/opc/mjolnir/workspace/e2e-smoke/state.json 2>/dev/null" > state.json || true
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null opc@100.106.150.47 "cat /home/opc/mjolnir/workspace/e2e-smoke/sprints/01/eval_report.json 2>/dev/null" > eval_report.json || true
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null opc@mjolnir "cat /home/opc/mjolnir/workspace/e2e-smoke/e2e.log 2>/dev/null" > e2e.log || true
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null opc@mjolnir "cat /home/opc/mjolnir/workspace/e2e-smoke/state.json 2>/dev/null" > state.json || true
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null opc@mjolnir "cat /home/opc/mjolnir/workspace/e2e-smoke/sprints/01/eval_report.json 2>/dev/null" > eval_report.json || true
 
       - name: Upload logs
         if: failure()
