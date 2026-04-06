@@ -17,7 +17,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REMOTE="opc@mjolnir.tail7093c5.ts.net"
+REMOTE="opc@100.106.150.47"
 REMOTE_MJOLNIR="/home/opc/mjolnir"
 REMOTE_PROJECT="${REMOTE_MJOLNIR}/workspace/e2e-smoke"
 TMUX_SESSION="mjolnir-e2e"
