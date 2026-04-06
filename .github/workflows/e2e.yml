@@ -43,9 +43,16 @@ jobs:
           mkdir -p ~/.ssh
           echo -e "Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null" > ~/.ssh/config
           chmod 600 ~/.ssh/config
+          # Also scan the host key so tailscale ssh doesn't complain
+          ssh-keyscan -H mjolnir.tail7093c5.ts.net >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh-keyscan -H mjolnir >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh-keyscan -H 100.106.150.47 >> ~/.ssh/known_hosts 2>/dev/null || true
           echo ""
           echo "=== SSH connectivity test (tailscale ssh) ==="
-          tailscale ssh opc@mjolnir "echo 'Tailscale SSH OK'" 2>&1 || echo "tailscale ssh failed"
+          tailscale ssh opc@mjolnir "echo 'Tailscale SSH OK'" 2>&1 || echo "tailscale ssh via hostname failed"
+          echo ""
+          echo "=== SSH connectivity test (regular ssh via tailscale IP) ==="
+          ssh opc@100.106.150.47 "echo 'Regular SSH via IP OK'" 2>&1 || echo "regular ssh via IP failed"
           echo ""
           echo "=== Debug: netcheck ==="
           tailscale netcheck 2>&1 | head -20
