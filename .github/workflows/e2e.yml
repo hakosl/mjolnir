@@ -40,14 +40,9 @@ jobs:
           tailscale ping -c 1 100.106.150.47 || echo "Tailscale ping failed"
           echo ""
           echo "=== SSH connectivity test (tailscale ssh) ==="
-          tailscale ssh opc@mjolnir "echo 'Tailscale SSH OK'" 2>&1 || echo "tailscale ssh via hostname failed"
-          echo ""
-          echo "=== SSH connectivity test (tailscale ssh via IP) ==="
-          tailscale ssh opc@100.106.150.47 "echo 'Tailscale SSH via IP OK'" 2>&1 || echo "tailscale ssh via IP failed"
-          echo ""
-          echo "=== SSH connectivity test (regular ssh) ==="
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 opc@mjolnir "echo 'Regular SSH OK'" 2>&1 || \
-          echo "Regular ssh failed"
+          tailscale ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null opc@mjolnir "echo 'Tailscale SSH OK'" 2>&1 || \
+          tailscale ssh -o "StrictHostKeyChecking no" -o "UserKnownHostsFile /dev/null" opc@mjolnir "echo 'Tailscale SSH OK (alt)'" 2>&1 || \
+          echo "tailscale ssh failed"
           echo ""
           echo "=== Debug: netcheck ==="
           tailscale netcheck 2>&1 | head -20
