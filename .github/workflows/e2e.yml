@@ -39,10 +39,13 @@ jobs:
           echo "=== Ping mjolnir server (Tailscale IP) ==="
           tailscale ping -c 1 100.106.150.47 || echo "Tailscale ping failed"
           echo ""
+          echo "=== Configure SSH to skip host key check ==="
+          mkdir -p ~/.ssh
+          echo -e "Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null" > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+          echo ""
           echo "=== SSH connectivity test (tailscale ssh) ==="
-          tailscale ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null opc@mjolnir "echo 'Tailscale SSH OK'" 2>&1 || \
-          tailscale ssh -o "StrictHostKeyChecking no" -o "UserKnownHostsFile /dev/null" opc@mjolnir "echo 'Tailscale SSH OK (alt)'" 2>&1 || \
-          echo "tailscale ssh failed"
+          tailscale ssh opc@mjolnir "echo 'Tailscale SSH OK'" 2>&1 || echo "tailscale ssh failed"
           echo ""
           echo "=== Debug: netcheck ==="
           tailscale netcheck 2>&1 | head -20
