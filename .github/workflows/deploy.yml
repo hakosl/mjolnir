@@ -24,20 +24,20 @@ jobs:
     needs: ci
     runs-on: ubuntu-latest
     environment: production
-    # Skip if secrets aren't configured yet
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
 
     steps:
-      - name: Connect to Tailscale
-        uses: tailscale/github-action@v3
-        with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:ci
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo -e "Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n  LogLevel ERROR" > ~/.ssh/config
+          chmod 600 ~/.ssh/config
 
       - name: Deploy code
         run: |
-          ssh -o StrictHostKeyChecking=accept-new opc@mjolnir << 'DEPLOY'
+          ssh opc@100.106.150.47 << 'DEPLOY'
             set -e
 
             # Clone if first deploy, pull otherwise
@@ -64,7 +64,7 @@ jobs:
 
       - name: Configure Claude auth
         run: |
-          ssh opc@mjolnir << CLAUDE_AUTH
+          ssh opc@100.106.150.47 << CLAUDE_AUTH
             mkdir -p ~/.claude
             echo '${{ secrets.CLAUDE_TOKEN }}' | claude setup-token 2>/dev/null || true
             echo "Claude auth configured"
@@ -72,7 +72,7 @@ jobs:
 
       - name: Health check
         run: |
-          ssh opc@mjolnir << 'HEALTH'
+          ssh opc@100.106.150.47 << 'HEALTH'
             set -e
             echo "=== System ==="
             uname -a
@@ -99,7 +99,7 @@ jobs:
       - name: Restart sessions (if requested)
         if: ${{ inputs.restart_sessions }}
         run: |
-          ssh opc@mjolnir << 'RESTART'
+          ssh opc@100.106.150.47 << 'RESTART'
             cd ~/mjolnir
             echo "Restarting mjolnir sessions..."
 
