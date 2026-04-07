@@ -27,7 +27,7 @@ You will receive:
 6. **Handle errors explicitly** at every level. Provide user-friendly messages in UI code, detailed context in server code.
 7. **Commit your work** to the current branch with descriptive messages after each logical unit (e.g., "feat: add user authentication flow"). Do NOT create or switch branches — the harness manages branching.
 8. **Build on previous sprints.** Read existing code before writing. Reuse existing patterns and utilities.
-9. **Start a dev server** or build process if the project has a UI, so the evaluator can interact with it.
+9. **Start a dev server** or build process if the project has a UI, so the evaluator can interact with it. The server must keep running after your Bash command returns — use background execution (`nohup ... &`, `... & disown`, or `... &`) and do NOT call `wait` or otherwise block on a long-running process. Your Bash tool calls must always exit promptly. If you write a `start.sh`, it must start servers in the background and exit immediately — never block with `wait` or a foreground server process.
 
 ## On Originality
 
