@@ -17,7 +17,7 @@ goals = [
     "Deploy-ready with Docker",
 ]
 
-tech_stack = "TypeScript, React, Vite, Tailwind CSS, Fastify, SQLite (better-sqlite3)"
+tech_stack = "TypeScript, Fastify, React, Vite, Tailwind CSS, better-sqlite3"
 
 # constraints = []
 

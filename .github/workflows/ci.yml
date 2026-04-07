@@ -61,4 +61,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install tomli
-      - run: bash tests/test_orchestration.sh
+      - run: |
+          git config --global user.name "CI Bot"
+          git config --global user.email "ci@test.local"
+          bash tests/test_orchestration.sh

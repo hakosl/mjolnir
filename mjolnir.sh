@@ -214,9 +214,9 @@ run_agent() {
     # Tee the raw JSONL stream to a debug file for troubleshooting
     local raw_stream_file="${PROJECT_DIR}/.raw_stream_${role}.jsonl"
     # Build claude command with optional model flag
-    local model_flag=""
+    local -a model_flag=()
     if [[ -n "$MJOLNIR_MODEL" ]]; then
-        model_flag="--model ${MJOLNIR_MODEL}"
+        model_flag=(--model "$MJOLNIR_MODEL")
     fi
 
     # cd into work_dir so claude -p runs from the correct directory
@@ -224,7 +224,7 @@ run_agent() {
         --output-format stream-json \
         --verbose \
         --dangerously-skip-permissions \
-        $model_flag \
+        "${model_flag[@]}" \
         --system-prompt "$(cat "${system_prompt_file}")") \
         2>/dev/null | tee "$raw_stream_file" | python3 "${LIB_DIR}/parse_stream.py" --stream > "$result_file" &
     local pipeline_pid=$!
@@ -529,7 +529,7 @@ $(if [[ -d "${WORK_DIR}/refs" ]] && [[ -n "$(ls -A "${WORK_DIR}/refs" 2>/dev/nul
     echo "The following reference files are available in the \`refs/\` directory. READ these — they contain design mockups, screenshots, example data, or other context that should inform your plan:"
     echo ""
     find "${WORK_DIR}/refs" -type f -printf "- \`refs/%P\`\n" 2>/dev/null || \
-        find "${WORK_DIR}/refs" -type f | while read -r f; do echo "- \`refs/${f#${WORK_DIR}/refs/}\`"; done
+        find "${WORK_DIR}/refs" -type f | while read -r f; do echo "- \`refs/${f#"${WORK_DIR}"/refs/}\`"; done
     echo ""
     echo "Incorporate these references into the sprint contracts and acceptance criteria where relevant."
 fi)
@@ -608,7 +608,7 @@ $(if [[ -d "${WORK_DIR}/refs" ]] && [[ -n "$(ls -A "${WORK_DIR}/refs" 2>/dev/nul
     echo "The following reference files have been provided in the \`refs/\` directory. READ these before implementing — they contain design mockups, screenshots, example data, or other context for this project:"
     echo ""
     find "${WORK_DIR}/refs" -type f -printf "- \`refs/%P\`\n" 2>/dev/null || \
-        find "${WORK_DIR}/refs" -type f | while read -r f; do echo "- \`refs/${f#${WORK_DIR}/refs/}\`"; done
+        find "${WORK_DIR}/refs" -type f | while read -r f; do echo "- \`refs/${f#"${WORK_DIR}"/refs/}\`"; done
     echo ""
     echo "Use the Read tool to view images (screenshots, mockups) and text files. Match the visual design, data formats, and patterns shown in these references."
 fi)
