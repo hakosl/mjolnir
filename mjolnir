@@ -86,19 +86,26 @@ cmd_edit() {
 cmd_run() {
     local name=""
     local planning_mode=""
+    local plan_file=""
 
-    # Parse args: name + optional --interactive / --auto
+    # Parse args: name + optional flags
     for arg in "$@"; do
         case "$arg" in
             --interactive) planning_mode="interactive" ;;
             --auto)        planning_mode="auto" ;;
+            --plan=*)      plan_file="${arg#--plan=}" ;;
             -*)            echo "Unknown flag: ${arg}" >&2; exit 1 ;;
             *)             name="$arg" ;;
         esac
     done
 
     if [[ -z "$name" ]]; then
-        echo "Usage: mjolnir run <project-name> [--interactive|--auto]"
+        echo "Usage: mjolnir run <project-name> [--plan=<path>] [--interactive|--auto]"
+        echo ""
+        echo "Options:"
+        echo "  --plan=<path>   Use a pre-written plan.md (skips planner agent)"
+        echo "  --interactive   Interactive planning with Claude"
+        echo "  --auto          Headless planning (default when --plan is provided)"
         exit 1
     fi
 
@@ -106,6 +113,42 @@ cmd_run() {
     project_dir="$(resolve_project "$name")"
     local session
     session="$(session_name "$project_dir")"
+
+    # If a plan file was provided, copy it into the work directory
+    if [[ -n "$plan_file" ]]; then
+        if [[ ! -f "$plan_file" ]]; then
+            die "Plan file not found: ${plan_file}"
+        fi
+
+        # Read project name from config to find work dir
+        local project_name
+        project_name="$(python3 - "${project_dir}/project.toml" <<'PYEOF' 2>/dev/null || echo "$name"
+import sys
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
+with open(sys.argv[1], "rb") as f:
+    c = tomllib.load(f)
+print(c.get("project", {}).get("name", ""))
+PYEOF
+)"
+        local work_dir="${project_dir}/${project_name}"
+        mkdir -p "$work_dir"
+        cp "$plan_file" "$work_dir/plan.md"
+
+        local sprint_count
+        sprint_count="$(grep -cE '^##+ Sprint [0-9]+' "$plan_file" 2>/dev/null)" || sprint_count="0"
+        if [[ "$sprint_count" -eq 0 ]]; then
+            sprint_count="$(grep -ciE 'sprint [0-9]+' "$plan_file" 2>/dev/null)" || sprint_count="1"
+        fi
+        echo "Plan loaded (${sprint_count} sprints) — planner phase will be skipped"
+
+        # Default to auto mode when a plan is provided (no planning needed)
+        if [[ -z "$planning_mode" ]]; then
+            planning_mode="auto"
+        fi
+    fi
 
     # Set planning mode env var if overridden
     local mode_env=""

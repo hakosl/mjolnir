@@ -29,7 +29,7 @@ Minimal required:
 name = "my-app"           # Also becomes the work subdirectory name
 description = "What to build"
 goals = ["Goal 1", "Goal 2"]
-tech_stack = "Python, Flask, SQLite"
+tech_stack = "TypeScript, React, Vite, Tailwind CSS, Fastify, SQLite (better-sqlite3)"
 # constraints = ["Optional constraints"]
 
 [planning]
@@ -100,16 +100,22 @@ The evaluator scores on four criteria (see `prompts/rubric.md` for full details)
 - **craft** — Code quality, naming, error handling, polish
 - **functionality** — Does it actually work? Are acceptance criteria met?
 
-## Step 4: Deploy
+## Step 4: Run
 
-With a pre-written plan:
+Local run with pre-written plan:
+```bash
+bash mjolnir run <project-name> --plan=workspace/<project-name>/plan.md
+```
+
+Remote deploy with plan:
 ```bash
 bash mjolnir deploy <project-name> --plan=workspace/<project-name>/plan.md
 ```
 
 Without a plan (planner agent creates one from project.toml goals):
 ```bash
-bash mjolnir deploy <project-name>
+bash mjolnir run <project-name>           # local
+bash mjolnir deploy <project-name>        # remote
 ```
 
 Upload only (don't start the run):
