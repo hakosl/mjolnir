@@ -17,6 +17,7 @@ VALID_PHASES = frozenset(
         "idle",
         "planning",
         "generating",
+        "testing",
         "evaluating",
         "rate_limited",
         "halted",
@@ -37,7 +38,7 @@ def default_state() -> dict[str, Any]:
         "rate_limit_resume_phase": None,
         "started_at": time.time(),
         "updated_at": time.time(),
-        "costs": {"planner": 0.0, "generator": 0.0, "evaluator": 0.0},
+        "costs": {"planner": 0.0, "generator": 0.0, "tester": 0.0, "evaluator": 0.0},
     }
 
 
@@ -94,8 +95,13 @@ def transition(state_file: str, new_phase: str, **updates: Any) -> dict[str, Any
     return _with_lock(state_file, _do)
 
 
+VALID_ROLES = frozenset({"planner", "generator", "tester", "evaluator"})
+
+
 def add_cost(state_file: str, role: str, amount: float) -> dict[str, Any]:
-    """Add cost for a role (planner/generator/evaluator). File-locked."""
+    """Add cost for a role (planner/generator/tester/evaluator). File-locked."""
+    if role not in VALID_ROLES:
+        raise ValueError(f"Invalid role: {role}. Valid: {VALID_ROLES}")
 
     def _do():
         state = read_state(state_file)

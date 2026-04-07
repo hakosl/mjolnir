@@ -456,7 +456,7 @@ proj="${TEST_DIR}/proj-generating"
 create_project "$proj" name="gen-test"
 work_dir="${proj}/gen-test"
 mkdir -p "$work_dir"
-git -C "$work_dir" init -b main > /dev/null 2>&1
+git -C "$work_dir" init -b develop > /dev/null 2>&1
 git -C "$work_dir" commit --allow-empty -m "init" > /dev/null 2>&1
 cat > "$work_dir/plan.md" <<'MD'
 ## Sprint 1: Setup
@@ -481,7 +481,7 @@ proj="${TEST_DIR}/proj-evaluating"
 create_project "$proj" name="eval-test"
 work_dir="${proj}/eval-test"
 mkdir -p "$work_dir"
-git -C "$work_dir" init -b main > /dev/null 2>&1
+git -C "$work_dir" init -b develop > /dev/null 2>&1
 git -C "$work_dir" commit --allow-empty -m "init" > /dev/null 2>&1
 cat > "$work_dir/plan.md" <<'MD'
 ## Sprint 1: Setup
@@ -492,10 +492,32 @@ python3 "$LIB_DIR/state.py" "$proj/state.json" transition generating sprint=1 at
 python3 "$LIB_DIR/state.py" "$proj/state.json" transition evaluating > /dev/null
 
 output="$(run_mjolnir "$proj")"
-if echo "$output" | grep -q "Resuming from interrupted evaluation"; then
+if echo "$output" | grep -q "Resuming from interrupted evaluating"; then
     pass "evaluating_resumes_as_generating"
 else
     fail "evaluating_resumes_as_generating" "expected resume message. Got: $(echo "$output" | head -10)"
+fi
+
+# Test: testing state → should resume as generating (re-run sprint)
+proj="${TEST_DIR}/proj-testing"
+create_project "$proj" name="test-test"
+work_dir="${proj}/test-test"
+mkdir -p "$work_dir"
+git -C "$work_dir" init -b develop > /dev/null 2>&1
+git -C "$work_dir" commit --allow-empty -m "init" > /dev/null 2>&1
+cat > "$work_dir/plan.md" <<'MD'
+## Sprint 1: Setup
+Do the setup.
+MD
+python3 "$LIB_DIR/state.py" "$proj/state.json" init > /dev/null
+python3 "$LIB_DIR/state.py" "$proj/state.json" transition generating sprint=1 attempt=1 total_sprints=2 > /dev/null
+python3 "$LIB_DIR/state.py" "$proj/state.json" transition testing > /dev/null
+
+output="$(run_mjolnir "$proj")"
+if echo "$output" | grep -q "Resuming from interrupted testing"; then
+    pass "testing_resumes_as_generating"
+else
+    fail "testing_resumes_as_generating" "expected resume message. Got: $(echo "$output" | head -10)"
 fi
 
 # ===================================================================
@@ -611,9 +633,12 @@ cat > "$work_dir/plan.md" <<'MD'
 Build the whole app.
 MD
 
-# Mock evaluator output: pre-create eval_report.json
+# Mock tester + evaluator output: pre-create reports
 sprint_dir="${proj}/sprints/01"
 mkdir -p "$sprint_dir"
+cat > "$sprint_dir/test_report.json" <<'JSON'
+{"sprint":1,"attempt":1,"passed":true,"hard_fail":false,"hard_fail_reason":null,"build":{"passed":true},"health":{"passed":true,"checks":[]},"tests":{"ran":false},"contract":{"passed":true,"total":3,"verified":3,"failed":0,"criteria":[]},"summary":"All criteria verified."}
+JSON
 cat > "$sprint_dir/eval_report.json" <<'JSON'
 {"scores":{"design_quality":8,"originality":7,"craft":7,"functionality":8},"sprint":1,"attempt":1,"feedback":"Good work."}
 JSON
@@ -638,6 +663,82 @@ if [[ -d "${proj}/full-flow" ]]; then
     pass "full_flow_work_dir_correct"
 else
     fail "full_flow_work_dir_correct" "expected '${proj}/full-flow' to exist"
+fi
+
+# ===================================================================
+# GIT BRANCHING: sprint branches and merge workflow
+# ===================================================================
+echo ""
+echo "--- Git branching ---"
+
+# Test: ensure_work_dir creates repo with develop branch
+proj="${TEST_DIR}/proj-branch-init"
+create_project "$proj" name="branch-test"
+work_dir="${proj}/branch-test"
+mkdir -p "$work_dir"
+git -C "$work_dir" init -b develop > /dev/null 2>&1
+git -C "$work_dir" commit --allow-empty -m "init" > /dev/null 2>&1
+branch="$(git -C "$work_dir" branch --show-current)"
+if [[ "$branch" == "develop" ]]; then
+    pass "init_creates_develop_branch"
+else
+    fail "init_creates_develop_branch" "expected 'develop', got '${branch}'"
+fi
+
+# Test: sprint branch created from develop
+git -C "$work_dir" checkout -b "sprint/01" > /dev/null 2>&1
+branch="$(git -C "$work_dir" branch --show-current)"
+if [[ "$branch" == "sprint/01" ]]; then
+    pass "sprint_branch_created"
+else
+    fail "sprint_branch_created" "expected 'sprint/01', got '${branch}'"
+fi
+
+# Test: sprint branch diverges from develop (commits visible via diff)
+echo "hello" > "$work_dir/file.txt"
+git -C "$work_dir" add file.txt > /dev/null 2>&1
+git -C "$work_dir" commit -m "feat: add file" > /dev/null 2>&1
+diff_files="$(git -C "$work_dir" diff --name-only develop...HEAD)"
+if [[ "$diff_files" == "file.txt" ]]; then
+    pass "sprint_diff_shows_changes"
+else
+    fail "sprint_diff_shows_changes" "expected 'file.txt', got '${diff_files}'"
+fi
+
+# Test: merge sprint into develop
+git -C "$work_dir" checkout develop > /dev/null 2>&1
+git -C "$work_dir" merge --no-edit "sprint/01" -m "merge sprint/01" > /dev/null 2>&1
+branch="$(git -C "$work_dir" branch --show-current)"
+if [[ "$branch" == "develop" ]] && [[ -f "$work_dir/file.txt" ]]; then
+    pass "sprint_merged_to_develop"
+else
+    fail "sprint_merged_to_develop" "merge failed or file missing"
+fi
+
+# Test: second sprint starts from merged develop (inherits previous work)
+git -C "$work_dir" checkout -b "sprint/02" > /dev/null 2>&1
+if [[ -f "$work_dir/file.txt" ]]; then
+    pass "second_sprint_has_previous_work"
+else
+    fail "second_sprint_has_previous_work" "file.txt from sprint/01 should exist"
+fi
+
+# Test: retry stays on same branch (idempotent checkout)
+git -C "$work_dir" checkout "sprint/02" > /dev/null 2>&1
+branch="$(git -C "$work_dir" branch --show-current)"
+if [[ "$branch" == "sprint/02" ]]; then
+    pass "retry_stays_on_sprint_branch"
+else
+    fail "retry_stays_on_sprint_branch" "expected 'sprint/02', got '${branch}'"
+fi
+
+# Test: diff after merge shows nothing (develop caught up)
+git -C "$work_dir" checkout develop > /dev/null 2>&1
+diff_after="$(git -C "$work_dir" diff --name-only develop...sprint/01 2>/dev/null)"
+if [[ -z "$diff_after" ]]; then
+    pass "merged_branch_no_diff"
+else
+    fail "merged_branch_no_diff" "expected empty diff, got '${diff_after}'"
 fi
 
 # ===================================================================

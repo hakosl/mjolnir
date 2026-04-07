@@ -249,7 +249,7 @@ run_agent() {
             local event_count
             event_count="$(wc -l < "$result_file" 2>/dev/null || echo 0)"
             local file_count
-            file_count="$(find "$work_dir" -type f -not -path "*/.git/*" 2>/dev/null | wc -l | tr -d ' ')"
+            file_count="$(find "$work_dir" -type f -not -path "*/.git/*" -not -path "*/node_modules/*" -not -path "*/venv/*" -not -path "*/__pycache__/*" -not -path "*/target/*" -not -path "*/.next/*" -not -path "*/dist/*" 2>/dev/null | wc -l | tr -d ' ')"
             echo "  [${elapsed}s] ${role} working... (${event_count} events, ${file_count} files in work dir)"
         fi
     done
@@ -375,7 +375,7 @@ ensure_work_dir() {
 
     if [[ ! -d "${WORK_DIR}/.git" ]]; then
         echo "Initializing git repo in ${WORK_DIR}..."
-        git -C "$WORK_DIR" init -b main
+        git -C "$WORK_DIR" init -b develop
         git -C "$WORK_DIR" commit --allow-empty -m "chore: initialize mjolnir project — ${PROJECT_NAME}"
         log_event "git_init" "work_dir=${WORK_DIR}"
     fi
@@ -390,6 +390,46 @@ ensure_sprint_dir() {
     sprint_dir="$(printf "%s/sprints/%02d" "${PROJECT_DIR}" "$sprint_num")"
     mkdir -p "$sprint_dir"
     echo "$sprint_dir"
+}
+
+# ---------------------------------------------------------------------------
+# Git branch helpers — harness owns all branch operations
+# ---------------------------------------------------------------------------
+ensure_sprint_branch() {
+    local sprint_num="$1"
+    local branch_name
+    branch_name="$(printf "sprint/%02d" "$sprint_num")"
+
+    local current_branch
+    current_branch="$(git -C "$WORK_DIR" branch --show-current)"
+
+    if git -C "$WORK_DIR" show-ref --verify --quiet "refs/heads/${branch_name}"; then
+        # Branch exists (retry case) — switch to it
+        if [[ "$current_branch" != "$branch_name" ]]; then
+            git -C "$WORK_DIR" checkout "$branch_name"
+        fi
+    else
+        # New sprint — create branch from develop
+        if [[ "$current_branch" != "develop" ]]; then
+            git -C "$WORK_DIR" checkout develop
+        fi
+        git -C "$WORK_DIR" checkout -b "$branch_name"
+    fi
+
+    log_event "branch_checkout" "branch=${branch_name}"
+    echo "$branch_name"
+}
+
+merge_sprint_to_develop() {
+    local sprint_num="$1"
+    local branch_name
+    branch_name="$(printf "sprint/%02d" "$sprint_num")"
+
+    git -C "$WORK_DIR" checkout develop
+    git -C "$WORK_DIR" merge "$branch_name" \
+        -m "chore: merge ${branch_name} into develop — sprint ${sprint_num} passed"
+
+    log_event "branch_merge" "branch=${branch_name}"
 }
 
 # ---------------------------------------------------------------------------
@@ -479,10 +519,24 @@ build_generator_prompt() {
     if [[ -f "${sprint_dir}/eval_report.json" ]]; then
         prev_feedback="
 
-## Previous Evaluator Feedback (YOU MUST ADDRESS EVERY POINT)
+## Previous Evaluator Quality Feedback
+
+Address these quality and design issues:
 
 \`\`\`json
 $(cat "${sprint_dir}/eval_report.json")
+\`\`\`"
+    fi
+
+    if [[ -f "${sprint_dir}/test_report.json" ]]; then
+        prev_feedback="${prev_feedback}
+
+## CRITICAL: Previous Tester Verification Failures (FIX THESE FIRST)
+
+The tester found broken or missing functionality. These are the HIGHEST PRIORITY — fix every failed criterion before addressing evaluator feedback. A broken feature blocks the entire sprint.
+
+\`\`\`json
+$(cat "${sprint_dir}/test_report.json")
 \`\`\`"
     fi
 
@@ -524,7 +578,7 @@ If this project has a web UI, ensure the dev server is running when you finish s
 PROMPT
 }
 
-build_evaluator_prompt() {
+build_tester_prompt() {
     local sprint="$1"
     local sprint_dir="$2"
     local attempt="$3"
@@ -537,9 +591,9 @@ build_evaluator_prompt() {
     fi
 
     cat <<PROMPT
-## Evaluation Task
+## Verification Task
 
-Evaluate Sprint ${sprint} (attempt ${attempt}) of the project.
+Verify Sprint ${sprint} (attempt ${attempt}) of the project.
 
 ## Sprint Contract (from plan.md)
 
@@ -549,10 +603,65 @@ ${plan_content}
 
 ## Instructions
 
-1. Read all code files in the project directory
-2. If a web UI exists, use \`npx playwright screenshot http://localhost:5173 screenshot.png\` and other Playwright CLI commands to interact with it
-3. Score against the rubric below
-4. Write your evaluation to: ${sprint_dir}/eval_report.json
+1. Extract ALL acceptance criteria for Sprint ${sprint} from the plan above
+2. Run \`git diff --name-only develop...HEAD\` and \`git diff develop...HEAD\` to see exactly what changed in this sprint
+3. Check that the project builds without errors
+4. Check that the application starts and responds to requests
+5. Run any existing test suites
+6. Verify EACH acceptance criterion — check code exists, call endpoints, screenshot UI
+7. Write your verification report to: ${sprint_dir}/test_report.json
+
+Be THOROUGH and SYSTEMATIC. Verify every criterion, not just the obvious ones.
+Write ONLY valid JSON to the test_report.json file.
+Set "sprint" to ${sprint} and "attempt" to ${attempt} in your report.
+PROMPT
+}
+
+build_evaluator_prompt() {
+    local sprint="$1"
+    local sprint_dir="$2"
+    local attempt="$3"
+
+    local plan_content=""
+    if [[ -f "${WORK_DIR}/plan.md" ]]; then
+        plan_content="$(cat "${WORK_DIR}/plan.md")"
+    else
+        plan_content="(plan.md not found)"
+    fi
+
+    local test_report=""
+    if [[ -f "${sprint_dir}/test_report.json" ]]; then
+        test_report="
+## Tester Verification Report
+
+The tester agent has already verified the sprint contract implementation. Use this as input — do NOT re-verify what the tester confirmed. Focus on quality and user experience.
+
+\`\`\`json
+$(cat "${sprint_dir}/test_report.json")
+\`\`\`"
+    fi
+
+    cat <<PROMPT
+## Validation Task
+
+Validate Sprint ${sprint} (attempt ${attempt}) of the project.
+${test_report}
+
+## Sprint Contract (from plan.md)
+
+\`\`\`markdown
+${plan_content}
+\`\`\`
+
+## Instructions
+
+1. Read the tester's verification report above — note which criteria passed/failed
+2. Run \`git diff --name-only develop...HEAD\` and \`git log develop..HEAD --oneline\` to understand this sprint's scope — focus your review on changed code only
+3. Read the code files changed in this sprint
+4. If a web UI exists, use Playwright to experience it AS A USER — focus on quality, not just "does it load"
+5. Score against the rubric below — factor in tester results for Functionality score. If the tester's report shows a test suite with a high failure rate, penalize Craft and Functionality accordingly — tests are part of the deliverable.
+6. Do NOT penalize this sprint for features scoped to future sprints — evaluate only what Sprint ${sprint}'s contract promises
+7. Write your evaluation to: ${sprint_dir}/eval_report.json
 
 ## Scoring Rubric
 
@@ -605,9 +714,9 @@ main() {
         phase="$(get_phase)"
     fi
 
-    # Handle resume during evaluation — skip back to generating for retry
-    if [[ "$phase" == "evaluating" ]]; then
-        echo "Resuming from interrupted evaluation — will re-run this sprint"
+    # Handle resume during testing/evaluation — skip back to generating for retry
+    if [[ "$phase" == "testing" || "$phase" == "evaluating" ]]; then
+        echo "Resuming from interrupted ${phase} — will re-run this sprint"
         phase="generating"
     fi
 
@@ -744,6 +853,11 @@ main() {
             log_event "sprint_start" "sprint=${sprint}" "attempt=${attempt}"
             notify "Sprint ${sprint}/${total_sprints} attempt ${attempt}" "info"
 
+            # --- BRANCH SETUP ---
+            local sprint_branch
+            sprint_branch="$(ensure_sprint_branch "$sprint")"
+            echo "Working on branch: ${sprint_branch}"
+
             # --- GENERATE ---
             echo "--- Generating ---"
             if ! run_agent "generator" "${PROMPTS_DIR}/generator.md" \
@@ -754,8 +868,38 @@ main() {
                 continue  # retry
             fi
 
-            # --- EVALUATE ---
-            echo "--- Evaluating ---"
+            # --- TEST (VERIFICATION) ---
+            echo "--- Testing (Verification) ---"
+            state_cmd transition testing > /dev/null
+
+            if ! run_agent "tester" "${PROMPTS_DIR}/tester.md" \
+                "$(build_tester_prompt "$sprint" "$sprint_dir" "$attempt")" \
+                "10" "${WORK_DIR}"; then
+                log_event "tester_error" "sprint=${sprint}" "attempt=${attempt}"
+                notify "Tester failed on sprint ${sprint}" "warning"
+                continue  # retry
+            fi
+
+            # Check for hard failures — skip evaluation, go straight to retry
+            if [[ -f "${sprint_dir}/test_report.json" ]]; then
+                local hard_fail
+                hard_fail="$(json_field "${sprint_dir}/test_report.json" "hard_fail" "false")"
+                if [[ "$hard_fail" == "True" || "$hard_fail" == "true" ]]; then
+                    local fail_reason
+                    fail_reason="$(json_field "${sprint_dir}/test_report.json" "hard_fail_reason" "Build or health check failed")"
+                    echo "HARD FAIL: ${fail_reason} — skipping evaluation, retrying"
+                    log_event "test_hard_fail" "sprint=${sprint}" "attempt=${attempt}" "reason=${fail_reason}"
+                    notify "Sprint ${sprint} hard fail: ${fail_reason}" "warning"
+                    continue  # retry with test feedback available to generator
+                fi
+            else
+                echo "Warning: Tester did not produce test_report.json"
+                log_event "test_missing" "sprint=${sprint}"
+                # Continue to evaluation anyway — tester output is optional input
+            fi
+
+            # --- EVALUATE (VALIDATION) ---
+            echo "--- Evaluating (Validation) ---"
             state_cmd transition evaluating > /dev/null
 
             if ! run_agent "evaluator" "${PROMPTS_DIR}/evaluator.md" \
@@ -786,6 +930,10 @@ PYEOF
                 log_event "sprint_pass" "sprint=${sprint}" "scores=${scores}"
                 notify "Sprint ${sprint} PASSED: ${scores}" "success"
                 echo "Sprint ${sprint} PASSED!"
+
+                # Merge sprint branch into develop
+                merge_sprint_to_develop "$sprint"
+                echo "Merged sprint/${sprint} into develop"
                 break
             else
                 local scores

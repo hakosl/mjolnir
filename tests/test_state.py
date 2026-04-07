@@ -42,6 +42,7 @@ def test_default_state():
     assert state["phase"] == "idle"
     assert state["sprint"] == 0
     assert state["costs"]["planner"] == 0.0
+    assert state["costs"]["tester"] == 0.0
     print("  PASS: default_state")
 
 
@@ -204,6 +205,28 @@ def test_missing_state_file():
     print("  PASS: missing_state_file")
 
 
+def test_testing_phase():
+    """Testing phase transitions work in the generate→test→evaluate flow."""
+    path = make_temp_state()
+    try:
+        write_state(path, default_state())
+        transition(path, "generating", sprint=1, attempt=1, total_sprints=3)
+
+        state = transition(path, "testing")
+        assert state["phase"] == "testing"
+        assert state["sprint"] == 1
+
+        state = transition(path, "evaluating")
+        assert state["phase"] == "evaluating"
+
+        # Tester cost tracking
+        state = add_cost(path, "tester", 3.5)
+        assert state["costs"]["tester"] == 3.5
+        print("  PASS: testing_phase")
+    finally:
+        cleanup(path)
+
+
 def test_crash_recovery_simulation():
     """Simulate crash mid-sprint: state persists, can resume."""
     path = make_temp_state()
@@ -241,5 +264,6 @@ if __name__ == "__main__":
     test_stale_tmp_cleanup()
     test_corrupt_state_file()
     test_missing_state_file()
+    test_testing_phase()
     test_crash_recovery_simulation()
     print("\nAll state tests passed!")

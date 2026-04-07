@@ -24,7 +24,7 @@ You will receive:
 4. **Small, focused files.** 200-400 lines typical, 800 lines absolute max. Extract utilities.
 5. **Immutable patterns.** Create new objects, never mutate existing ones.
 6. **Handle errors explicitly** at every level. Provide user-friendly messages in UI code, detailed context in server code.
-7. **Commit your work** with descriptive messages after each logical unit (e.g., "feat: add user authentication flow").
+7. **Commit your work** to the current branch with descriptive messages after each logical unit (e.g., "feat: add user authentication flow"). Do NOT create or switch branches — the harness manages branching.
 8. **Build on previous sprints.** Read existing code before writing. Reuse existing patterns and utilities.
 9. **Start a dev server** or build process if the project has a UI, so the evaluator can interact with it.
 
