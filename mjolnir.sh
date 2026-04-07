@@ -87,6 +87,9 @@ WORK_DIR="${PROJECT_DIR}/${PROJECT_NAME}"
 # Planning mode — env var override takes precedence over config
 PLANNING_MODE="${MJOLNIR_PLANNING_MODE:-$(read_config 'planning.mode' 'interactive')}"
 
+# Model — env var override takes precedence over config. Empty = use claude default.
+MJOLNIR_MODEL="${MJOLNIR_MODEL:-$(read_config 'model' '')}"
+
 # Thresholds
 THRESH_DESIGN="$(read_config 'scoring.thresholds.design_quality' '7')"
 THRESH_ORIGINALITY="$(read_config 'scoring.thresholds.originality' '5')"
@@ -210,11 +213,18 @@ run_agent() {
     # We monitor the file for rate_limit events and kill claude if needed.
     # Tee the raw JSONL stream to a debug file for troubleshooting
     local raw_stream_file="${PROJECT_DIR}/.raw_stream_${role}.jsonl"
+    # Build claude command with optional model flag
+    local model_flag=""
+    if [[ -n "$MJOLNIR_MODEL" ]]; then
+        model_flag="--model ${MJOLNIR_MODEL}"
+    fi
+
     # cd into work_dir so claude -p runs from the correct directory
     echo "$user_prompt" | (cd "$work_dir" && claude -p \
         --output-format stream-json \
         --verbose \
         --dangerously-skip-permissions \
+        $model_flag \
         --system-prompt "$(cat "${system_prompt_file}")") \
         2>/dev/null | tee "$raw_stream_file" | python3 "${LIB_DIR}/parse_stream.py" --stream > "$result_file" &
     local pipeline_pid=$!

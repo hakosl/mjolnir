@@ -8,6 +8,8 @@
 #
 # Designed to run with a fast/cheap model (Haiku) in ~3-5 minutes.
 
+model = "claude-haiku-4-5-20251001"
+
 [project]
 name = "e2e-smoke"
 description = """A minimal full-stack web app for E2E testing.

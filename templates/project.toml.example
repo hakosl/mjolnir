@@ -4,6 +4,9 @@
 # Required fields are uncommented. Optional fields are commented with defaults.
 # Generated code is written to ./<name>/ inside the project directory.
 
+# model = ""               # Claude model for all agents (e.g. "claude-haiku-4-5-20251001")
+                            # Empty = use claude CLI default. Override with MJOLNIR_MODEL env var.
+
 [project]
 name = "my-app"
 description = "A brief description of what to build"
