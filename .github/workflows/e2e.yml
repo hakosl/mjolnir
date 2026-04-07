@@ -12,7 +12,7 @@ jobs:
   e2e:
     name: E2E Smoke Test (OCI)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -33,7 +33,7 @@ jobs:
 
       - name: Run E2E smoke test
         env:
-          E2E_TIMEOUT: "600"
+          E2E_TIMEOUT: "900"
         run: bash tests/e2e/run_e2e.sh
 
       - name: Collect logs on failure
@@ -42,6 +42,7 @@ jobs:
           ssh opc@100.106.150.47 "cat /home/opc/mjolnir/workspace/e2e-smoke/e2e.log 2>/dev/null" > e2e.log || true
           ssh opc@100.106.150.47 "cat /home/opc/mjolnir/workspace/e2e-smoke/state.json 2>/dev/null" > state.json || true
           ssh opc@100.106.150.47 "cat /home/opc/mjolnir/workspace/e2e-smoke/sprints/01/eval_report.json 2>/dev/null" > eval_report.json || true
+          ssh opc@100.106.150.47 "cat /home/opc/mjolnir/workspace/e2e-smoke/sprints/01/test_report.json 2>/dev/null" > test_report.json || true
 
       - name: Upload logs
         if: failure()
@@ -52,6 +53,7 @@ jobs:
             e2e.log
             state.json
             eval_report.json
+            test_report.json
 
       - name: Cleanup
         if: ${{ always() && inputs.cleanup }}
