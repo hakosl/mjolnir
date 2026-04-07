@@ -107,9 +107,16 @@ Local run with pre-written plan:
 bash mjolnir run <project-name> --plan=workspace/<project-name>/plan.md
 ```
 
-Remote deploy with plan:
+With reference files (screenshots, design mockups, example data):
 ```bash
-bash mjolnir deploy <project-name> --plan=workspace/<project-name>/plan.md
+bash mjolnir run <project-name> --plan=workspace/<project-name>/plan.md \
+    --ref=designs/homepage.png --ref=designs/dashboard.png --ref=sample-data.csv
+```
+
+Remote deploy with plan and refs:
+```bash
+bash mjolnir deploy <project-name> --plan=workspace/<project-name>/plan.md \
+    --ref=designs/ --ref=sample-data.csv
 ```
 
 Without a plan (planner agent creates one from project.toml goals):
@@ -118,10 +125,15 @@ bash mjolnir run <project-name>           # local
 bash mjolnir deploy <project-name>        # remote
 ```
 
-Upload only (don't start the run):
-```bash
-bash mjolnir deploy <project-name> --plan=workspace/<project-name>/plan.md --no-run
-```
+### Reference Files
+
+`--ref=<file|dir>` copies files into `refs/` in the work directory. The generator and planner agents can read these. Use for:
+- **Design mockups / screenshots** — the generator views images with its Read tool
+- **Example data files** — CSV, JSON, or other formats the app should handle
+- **Existing code** — patterns or implementations to build on
+- **API docs / specs** — OpenAPI schemas, protocol buffers, etc.
+
+The flag is repeatable. Directories are copied recursively.
 
 ## Step 5: Monitor
 

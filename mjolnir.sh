@@ -389,6 +389,13 @@ ensure_work_dir() {
         git -C "$WORK_DIR" commit --allow-empty -m "chore: initialize mjolnir project — ${PROJECT_NAME}"
         log_event "git_init" "work_dir=${WORK_DIR}"
     fi
+
+    # Ensure refs/ is gitignored (reference files shouldn't be committed)
+    if [[ -d "${WORK_DIR}/refs" ]]; then
+        if ! grep -qx 'refs/' "${WORK_DIR}/.gitignore" 2>/dev/null; then
+            echo 'refs/' >> "${WORK_DIR}/.gitignore"
+        fi
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -515,6 +522,18 @@ $(cat "${PROJECT_DIR}/project.toml")
 \`\`\`
 ${sprint_limit}
 
+$(if [[ -d "${WORK_DIR}/refs" ]] && [[ -n "$(ls -A "${WORK_DIR}/refs" 2>/dev/null)" ]]; then
+    echo ""
+    echo "## Reference Files"
+    echo ""
+    echo "The following reference files are available in the \`refs/\` directory. READ these — they contain design mockups, screenshots, example data, or other context that should inform your plan:"
+    echo ""
+    find "${WORK_DIR}/refs" -type f -printf "- \`refs/%P\`\n" 2>/dev/null || \
+        find "${WORK_DIR}/refs" -type f | while read -r f; do echo "- \`refs/${f#${WORK_DIR}/refs/}\`"; done
+    echo ""
+    echo "Incorporate these references into the sprint contracts and acceptance criteria where relevant."
+fi)
+
 Create a comprehensive build plan. Write the plan to \`plan.md\` in the current directory using a RELATIVE path.
 
 CRITICAL: Your current working directory is \`${WORK_DIR}\`. Write ALL files using RELATIVE paths only (e.g., \`plan.md\`, not \`${WORK_DIR}/plan.md\`). Do NOT use absolute paths.
@@ -582,6 +601,17 @@ You MUST write ALL files using RELATIVE paths (e.g., \`app.py\`, \`static/index.
 Do NOT use absolute paths. Any files written outside the current directory will NOT be tracked by git and the sprint will FAIL.
 
 Before writing any file, verify you are using a relative path, not an absolute one starting with \`/\`.
+
+$(if [[ -d "${WORK_DIR}/refs" ]] && [[ -n "$(ls -A "${WORK_DIR}/refs" 2>/dev/null)" ]]; then
+    echo "## Reference Files"
+    echo ""
+    echo "The following reference files have been provided in the \`refs/\` directory. READ these before implementing — they contain design mockups, screenshots, example data, or other context for this project:"
+    echo ""
+    find "${WORK_DIR}/refs" -type f -printf "- \`refs/%P\`\n" 2>/dev/null || \
+        find "${WORK_DIR}/refs" -type f | while read -r f; do echo "- \`refs/${f#${WORK_DIR}/refs/}\`"; done
+    echo ""
+    echo "Use the Read tool to view images (screenshots, mockups) and text files. Match the visual design, data formats, and patterns shown in these references."
+fi)
 
 Start implementing now. Write complete, runnable code. Commit your work with descriptive messages.
 If this project has a web UI, ensure the dev server is running when you finish so the evaluator can interact with it.

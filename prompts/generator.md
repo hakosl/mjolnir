@@ -15,6 +15,7 @@ You will receive:
 - The full `plan.md` with all sprint contracts
 - Which sprint number to implement
 - Previous evaluator feedback (if this is a retry after a failed evaluation)
+- Reference files in `refs/` (if provided) — design mockups, screenshots, example data, or other context. READ these before implementing. Images can be viewed with the Read tool.
 
 ## Rules
 

@@ -87,6 +87,7 @@ cmd_run() {
     local name=""
     local planning_mode=""
     local plan_file=""
+    local refs_args=()
 
     # Parse args: name + optional flags
     for arg in "$@"; do
@@ -94,18 +95,23 @@ cmd_run() {
             --interactive) planning_mode="interactive" ;;
             --auto)        planning_mode="auto" ;;
             --plan=*)      plan_file="${arg#--plan=}" ;;
+            --ref=*)       refs_args+=("${arg#--ref=}") ;;
+            --refs=*)      refs_args+=("${arg#--refs=}") ;;
             -*)            echo "Unknown flag: ${arg}" >&2; exit 1 ;;
             *)             name="$arg" ;;
         esac
     done
 
     if [[ -z "$name" ]]; then
-        echo "Usage: mjolnir run <project-name> [--plan=<path>] [--interactive|--auto]"
+        echo "Usage: mjolnir run <project-name> [--plan=<path>] [--ref=<file|dir>...] [--interactive|--auto]"
         echo ""
         echo "Options:"
-        echo "  --plan=<path>   Use a pre-written plan.md (skips planner agent)"
-        echo "  --interactive   Interactive planning with Claude"
-        echo "  --auto          Headless planning (default when --plan is provided)"
+        echo "  --plan=<path>       Use a pre-written plan.md (skips planner agent)"
+        echo "  --ref=<file|dir>    Reference file or directory (screenshots, CSVs, examples)"
+        echo "                      Repeatable: --ref=mockup.png --ref=sample-data.csv"
+        echo "                      Directories are copied recursively into refs/"
+        echo "  --interactive       Interactive planning with Claude"
+        echo "  --auto              Headless planning (default when --plan is provided)"
         exit 1
     fi
 
@@ -148,6 +154,47 @@ PYEOF
         if [[ -z "$planning_mode" ]]; then
             planning_mode="auto"
         fi
+    fi
+
+    # Copy reference files into the work directory
+    if [[ ${#refs_args[@]} -gt 0 ]]; then
+        # Resolve work dir (may already be set by plan copy above)
+        if [[ -z "${work_dir:-}" ]]; then
+            local project_name
+            project_name="$(python3 - "${project_dir}/project.toml" <<'PYEOF' 2>/dev/null || echo "$name"
+import sys
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
+with open(sys.argv[1], "rb") as f:
+    c = tomllib.load(f)
+print(c.get("project", {}).get("name", ""))
+PYEOF
+)"
+            local work_dir="${project_dir}/${project_name}"
+        fi
+
+        local refs_dir="${work_dir}/refs"
+        mkdir -p "$refs_dir"
+
+        local ref_count=0
+        for ref in "${refs_args[@]}"; do
+            if [[ ! -e "$ref" ]]; then
+                echo "Warning: ref not found, skipping: ${ref}" >&2
+                continue
+            fi
+            if [[ -d "$ref" ]]; then
+                cp -r "$ref"/* "$refs_dir/" 2>/dev/null || cp -r "$ref"/. "$refs_dir/"
+            else
+                cp "$ref" "$refs_dir/"
+            fi
+            ref_count=$((ref_count + 1))
+        done
+
+        local total_files
+        total_files="$(find "$refs_dir" -type f 2>/dev/null | wc -l | tr -d ' ')"
+        echo "Reference files loaded (${total_files} files in refs/)"
     fi
 
     # Set planning mode env var if overridden
@@ -502,25 +549,30 @@ cmd_deploy() {
     local name=""
     local plan_file=""
     local no_run=false
+    local refs_args=()
 
     for arg in "$@"; do
         case "$arg" in
             --no-run)   no_run=true ;;
             --plan=*)   plan_file="${arg#--plan=}" ;;
+            --ref=*)    refs_args+=("${arg#--ref=}") ;;
+            --refs=*)   refs_args+=("${arg#--refs=}") ;;
             -*)         echo "Unknown flag: ${arg}" >&2; exit 1 ;;
             *)          name="$arg" ;;
         esac
     done
 
     if [[ -z "$name" ]]; then
-        echo "Usage: mjolnir deploy <project-name> [--plan=<path>] [--no-run]"
+        echo "Usage: mjolnir deploy <project-name> [--plan=<path>] [--ref=<file|dir>...] [--no-run]"
         echo ""
         echo "Uploads project to OCI instance and starts a run."
         echo "Looks for project.toml in workspace/<name>/ or current directory."
         echo ""
         echo "Options:"
-        echo "  --plan=<path>   Upload a plan.md file (skips planner agent)"
-        echo "  --no-run        Upload only, don't start the run"
+        echo "  --plan=<path>       Upload a plan.md file (skips planner agent)"
+        echo "  --ref=<file|dir>    Reference file or directory (screenshots, CSVs, examples)"
+        echo "                      Repeatable: --ref=mockup.png --ref=sample-data.csv"
+        echo "  --no-run            Upload only, don't start the run"
         exit 1
     fi
 
@@ -592,6 +644,31 @@ PYEOF
             sprint_count="$(grep -ciE 'sprint [0-9]+' "$plan_file" 2>/dev/null)" || sprint_count="1"
         fi
         echo "  Plan uploaded (${sprint_count} sprints) — planner phase will be skipped"
+    fi
+
+    # Step 5b: Upload reference files if provided
+    if [[ ${#refs_args[@]} -gt 0 ]]; then
+        echo "  Uploading reference files..."
+        remote_ssh "mkdir -p '${remote_work}/refs'"
+
+        local ref_count=0
+        for ref in "${refs_args[@]}"; do
+            if [[ ! -e "$ref" ]]; then
+                echo "  Warning: ref not found, skipping: ${ref}" >&2
+                continue
+            fi
+            if [[ -d "$ref" ]]; then
+                scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+                    "$ref"/* "${REMOTE_HOST}:${remote_work}/refs/" 2>/dev/null || \
+                scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+                    "$ref" "${REMOTE_HOST}:${remote_work}/refs/"
+            else
+                scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+                    "$ref" "${REMOTE_HOST}:${remote_work}/refs/"
+            fi
+            ref_count=$((ref_count + 1))
+        done
+        echo "  Uploaded ${ref_count} reference file(s) to refs/"
     fi
 
     echo "  Deployed to ${remote_project}"
