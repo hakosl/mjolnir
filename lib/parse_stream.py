@@ -75,10 +75,14 @@ def parse_stream(
             rl_info = event.get("rate_limit_info", {})
             resets_at = event.get("resetsAt") or rl_info.get("resetsAt")
             rl_status = event.get("status") or rl_info.get("status", "")
+            overage_status = event.get("overageStatus") or rl_info.get("overageStatus", "")
             # Only treat as rate limited if status is "rejected" or "limited"
             # "allowed" events are informational — just a status update
             is_blocked = rl_status in ("rejected", "limited")
-            if resets_at is not None and is_blocked:
+            # If overage is allowed, let claude handle retry internally —
+            # don't treat as a hard block that requires harness intervention
+            has_overage = overage_status == "allowed"
+            if resets_at is not None and is_blocked and not has_overage:
                 result["rate_limited"] = True
                 result["rate_limit_resets_at"] = resets_at
                 _log_event(
@@ -88,7 +92,18 @@ def parse_stream(
                         "resets_at": resets_at,
                         "rate_limit_type": event.get("rateLimitType"),
                         "status": event.get("status"),
-                        "overage_status": event.get("overageStatus"),
+                        "overage_status": overage_status,
+                    },
+                )
+            elif is_blocked and has_overage:
+                _log_event(
+                    log_file,
+                    "rate_limit_overage",
+                    {
+                        "resets_at": resets_at,
+                        "rate_limit_type": event.get("rateLimitType"),
+                        "status": "using_overage",
+                        "overage_status": overage_status,
                     },
                 )
 
@@ -217,9 +232,22 @@ def stream_events(input_stream: IO[str], log_file: str | None = None):
             rl_info = event.get("rate_limit_info", {})
             resets_at = event.get("resetsAt") or rl_info.get("resetsAt")
             rl_status = event.get("status") or rl_info.get("status", "")
+            overage_status = event.get("overageStatus") or rl_info.get("overageStatus", "")
             # Only yield rate limit for actual blocks, not informational events
             is_blocked = rl_status in ("rejected", "limited")
-            if resets_at is None or not is_blocked:
+            # If overage is allowed, let claude handle retry internally
+            has_overage = overage_status == "allowed"
+            if resets_at is None or not is_blocked or has_overage:
+                if is_blocked and has_overage:
+                    _log_event(
+                        log_file,
+                        "rate_limit_overage",
+                        {
+                            "resets_at": resets_at,
+                            "rate_limit_type": event.get("rateLimitType"),
+                            "status": "using_overage",
+                        },
+                    )
                 continue
             result["rate_limited"] = True
             result["rate_limit_resets_at"] = resets_at
