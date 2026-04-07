@@ -23,8 +23,6 @@ jobs:
     name: Deploy to Oracle Cloud
     needs: ci
     runs-on: ubuntu-latest
-    environment: production
-    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
 
     steps:
       - name: Setup SSH
