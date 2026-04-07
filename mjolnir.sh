@@ -220,10 +220,11 @@ run_agent() {
     fi
 
     # cd into work_dir so claude -p runs from the correct directory
-    echo "$user_prompt" | (cd "$work_dir" && claude -p \
+    echo "$user_prompt" | (cd "$work_dir" && CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1 claude -p \
         --output-format stream-json \
         --verbose \
         --dangerously-skip-permissions \
+        --effort high \
         "${model_flag[@]}" \
         --system-prompt "$(cat "${system_prompt_file}")") \
         2>/dev/null | tee "$raw_stream_file" | python3 "${LIB_DIR}/parse_stream.py" --stream > "$result_file" &
@@ -804,9 +805,10 @@ main() {
             # Step 1: Send the project context as a seed message via -p
             #         This creates a session the user can resume interactively.
             local seed_session_id
-            seed_session_id="$(cd "$WORK_DIR" && claude -p \
+            seed_session_id="$(cd "$WORK_DIR" && CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1 claude -p \
                 --dangerously-skip-permissions \
                 --output-format json \
+                --effort high \
                 --system-prompt "$(cat "${PROMPTS_DIR}/planner.md")" \
                 "$(build_planner_prompt)" 2>/dev/null \
                 | python3 -c "import json,sys; print(json.load(sys.stdin).get('session_id',''))" 2>/dev/null)" || true
