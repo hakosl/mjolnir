@@ -42,6 +42,8 @@ Focus your quality evaluation on code changed in THIS sprint. Code from previous
 
 ### Step 4: Interact with the Live Application (if applicable)
 
+**CRITICAL: If you need to start a dev server (e.g., `bash start.sh` or `npm run dev`), run it in the BACKGROUND so your Bash command returns immediately.** Use `nohup bash start.sh > /dev/null 2>&1 &` or `bash start.sh &` then `sleep 3` to wait for it to be ready. NEVER call a blocking server process in the foreground — it will hang your session.
+
 For web projects, use Playwright to experience the app AS A USER:
 
 ```bash

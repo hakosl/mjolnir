@@ -46,6 +46,8 @@ cargo build 2>/dev/null
 
 Record build output — capture both stdout and stderr. A build failure is an automatic hard fail.
 
+**CRITICAL: If you need to start a dev server (e.g., `bash start.sh` or `npm run dev`), run it in the BACKGROUND so your Bash command returns immediately.** Use `nohup bash start.sh > /dev/null 2>&1 &` or `bash start.sh &` then `sleep 3` to wait for it to be ready. NEVER call a blocking server process in the foreground — it will hang your session. If `start.sh` itself blocks (has `wait` at the end), run it with `bash start.sh &` and move on.
+
 ### Step 4: Runtime Health Checks
 
 Verify the application starts and responds:
